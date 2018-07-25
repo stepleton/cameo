@@ -1,2 +1,2 @@
 # cameo
-3.3V &lt;-> 5V level adapter for PocketBeagle, and an application or two
+Watch this space... first I have to figure out how to exchange two symbol names in KiCad :-)
