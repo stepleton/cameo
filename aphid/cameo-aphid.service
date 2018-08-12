@@ -1,0 +1,28 @@
+# Apple parallel port storage emulator for Cameo
+#
+# Forfeited into the public domain with NO WARRANTY. Read LICENSE for details.
+#
+# This systemd file starts the Aphid profile emulator software on an ordinary
+# multi-user boot. It expects the disk emulator script (profile.py) and a
+# disk image (profile.image) in the directory /usr/local/lib/cameo-aphid.
+#
+# Since this file is most useful for running the disk emulator in "headless"
+# mode, it's good to know the blinking patterns that the emulator flashes on
+# the user LEDs to communicate about its state. See profile.py for details.
+
+[Unit]
+Description=Cameo/Aphid parallel port hard drive emulator
+Requires=systemd-modules-load.service
+
+[Service]
+User=root
+WorkingDirectory=/usr/local/lib/cameo-aphid
+ExecStart=/usr/local/lib/cameo-aphid/profile.py profile.image
+# The first kill signal tells Cameo to flush all pending writes to the disk
+# image. The second tells Cameo to terminate.
+ExecStop=/bin/kill $MAINPID
+ExecStop=/bin/sleep 5
+ExecStop=-/bin/kill $MAINPID
+
+[Install]
+WantedBy=multi-user.target
