@@ -220,4 +220,4 @@ following people and resources:
   the [TI E2E Community](https://e2e.ti.com/).
 * Anonymous friends.
 
--- [_Tom Stepleton_](mailto:stepleton@gmail.com), 11 August 2017, London
+-- [_Tom Stepleton_](mailto:stepleton@gmail.com), 11 August 2018, London
