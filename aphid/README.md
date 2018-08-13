@@ -450,4 +450,4 @@ of the following people and resources:
   community.
 * Anonymous friends.
 
--- [_Tom Stepleton_](mailto:stepleton@gmail.com), 11 August 2017, London
+-- [_Tom Stepleton_](mailto:stepleton@gmail.com), 11 August 2018, London
