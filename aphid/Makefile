@@ -29,8 +29,8 @@ install:
 	mkdir -p $(INSTALL_DIR)
 	install --mode=775 profile.py $(INSTALL_DIR)
 	install --backup=numbered --mode=664 profile.image $(INSTALL_DIR)
-	chown -R debian:debian $(INSTALL_DIR)
-	chmod -R ug+rw $(INSTALL_DIR)
+	chown -R debian:debian $(INSTALL_DIR) | true  # Ignore error: dir may be
+	chmod -R ug+rw $(INSTALL_DIR) | true          # on another filesystem.
 	install cameo-aphid.service $(SYSTEMD_DIR)
 	@echo
 	@echo 'To start ProFile emulation on boot, execute:'

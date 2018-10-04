@@ -451,8 +451,10 @@ def image_mmap(path, create):
 
   Yields:
     A 2-tuple with these elements:
-        [0]: an 'rb+' file object for the disk image file.
-        [1]: an mmap object for the file's entire contents.
+        [0]: an 'rb+' file object for the disk image file. Do not modify the
+             disk image file with this object; in fact, you probably shouldn't
+             use it for anything.
+        [1]: a writeable mmap object for the file's entire contents.
 
   Raises:
     IOError: either this function was told to create an image file that already
@@ -468,7 +470,6 @@ def image_mmap(path, create):
       for s in xrange(IMAGE_SIZE // SECTOR_SIZE):
         f.write('\x00' * SECTOR_SIZE)
       f.flush()
-      os.fsync(f.fileno())
 
   # Check that the image file is the correct size.
   true_image_size = os.stat(path).st_size
@@ -483,8 +484,69 @@ def image_mmap(path, create):
     yield (f, mem)
     mem.flush()
     mem.close()
-    f.flush()
-    os.fsync(f.fileno())
+    logging.info('Final disk image data flush complete. '
+                 'Disk image file closed.')
+
+
+class ImageFlusher(object):
+  """Background disk-syncing for mmap'd disk images.
+
+  This context manager manages a thread that forces changes to a mmap'd disk
+  image file to disk (at least as much as Linux allows---the kernel source
+  makes it look as if `mmap.mmap.flush()` should force this, but who knows).
+  To avoid excessive writes to Flash media, a delay can be specified between
+  successive writes.
+
+  Code that changes data in the mmap'd file should call the `dirty` method on
+  the `ImageFlusher` object created for (and obtained by) the `with` statement.
+  The thread will save the data to disk at most `delay` seconds later (where
+  `delay` is a constructor argument).
+
+  NOTE: Disk-syncing is NOT triggered on exiting an `ImageFlusher` context.
+  (It would be redundant with the sync upon leaving an `image_mmap` context.)
+  """
+
+  def __init__(self, image, delay=4.0):
+    """Initialise an ImageFlusher.
+
+    Args:
+      image: A 2-tuple of the kind yielded by `image_mmap`.
+      delay: Flush no more frequently than this often, in seconds.
+    """
+    self._image = image
+    self._delay = delay
+    self._event = threading.Event()  # "Must flush" -OR- "It's time to quit"
+    self._cease = threading.Event()  # "It's time to quit"
+    self._thread = None
+
+  def dirty(self):
+    self._event.set()  # An event ("Time to flush to disk!") has occurred
+
+  def __enter__(self):
+    """Context manager entry. Create and run the flusher thread."""
+
+    # The dual-Event design makes for a compact implementation of "
+    def thread():
+      _, mem = self._image
+      while True:
+        self._event.wait()               # Wait for anything to happen
+        if self._cease.is_set(): return  # Exit the thread if it's time to quit
+        mem.flush()                      # Nope, time to flush, so flush
+        logging.info('Disk image data flushed to the disk image file.')
+        self._event.clear()              # Get ready for the next event
+        # The next line: pause temporarily to avoid lots of writes.
+        self._cease.wait(self._delay)    # But wake NOW if it's time to quit
+
+    self._thread = threading.Thread(target=thread, name='flusher')
+    self._thread.start()
+    return self
+
+  def __exit__(self, ex_type, ex_value, traceback):
+    """Context manager exit. Shut down the flusher."""
+    del ex_type, ex_value, traceback  # Unused
+    self._cease.set()  # The flusher should shut down
+    self._event.set()  # An event ("Shut down the flusher!") has occurred
+    self._thread.join()
 
 
 def image_get_sector(image, sector):
@@ -507,7 +569,7 @@ def image_get_sector(image, sector):
   return mem[start_index:end_index]
 
 
-def image_put_sector(image, sector, data):
+def image_put_sector(image, sector, data, flusher=None):
   """Store sector data in the `sector`th sector of the disk image.
 
   The modified disk image data is committed to the image file as soon as
@@ -518,11 +580,12 @@ def image_put_sector(image, sector, data):
     sector: Index of the sector receiving the data. Out-of-bounds sector
         indices are silently ignored with no effect on the disk image.
     data: 532-bytes of sector data to write to the `sector`th sector.
+    flusher: Optional `ImageFlusher` object initialised with `image`.
 
   Raises:
     ValueError: `data` is not 532 bytes long.
   """
-  f, mem = image
+  _, mem = image
   if len(data) != SECTOR_SIZE: raise ValueError(
       'Sector data supplied to image_put_sector for sector {} was {} bytes '
       'long. It should be {} bytes.'.format(sector, len(data), SECTOR_SIZE))
@@ -532,9 +595,10 @@ def image_put_sector(image, sector, data):
   if start_index < 0 or end_index > IMAGE_SIZE: return
 
   mem[start_index:end_index] = data
-  mem.flush()
-  f.flush()
-  os.fsync(f.fileno())
+  if flusher is not None:
+    flusher.dirty()
+  else:
+    mem.flush()
 
 
 #######################################
@@ -646,7 +710,7 @@ def aphd_await_command(rpmsg):
 ##########################
 
 
-def profile(image, rpmsg, leds):
+def profile(image, rpmsg, leds, flusher=None):
   """Emulator core; broker data exchange between the Aphid and the disk image.
 
   Does not return voluntarily. KeyboardInterrupt and select.error exceptions
@@ -657,6 +721,7 @@ def profile(image, rpmsg, leds):
     image: A 2-tuple of the kind yielded by `image_mmap`.
     rpmsg: A 3-tuple of the kind created by `rpmsg_io_init`.
     leds: An LEDs object.
+    flusher: Optional `ImageFlusher` object initialised with `image`.
 
   Raises:
     KeyboardInterrupt: the emulator main loop has been interrupted by SIGTERM.
@@ -710,7 +775,7 @@ def profile(image, rpmsg, leds):
     elif op in [PROFILE_WRITE, PROFILE_WRITE_VERIFY, PROFILE_WRITE_FORCE_SPARE]:
       logging.info('[%s] Write sector $%06X', hex_command, sector)
       data = aphd_get_sector(rpmsg)  # Get sector data from PRU1
-      image_put_sector(image, sector, data)  # Place in the disk image
+      image_put_sector(image, sector, data, flusher)  # Place in the disk image
 
     else:
       logging.warning('[%s] Unrecognised command, ignoring!', hex_command)
@@ -752,15 +817,15 @@ def main(FLAGS):
       rpmsg = rpmsg_io_init(device)
       # Open disk image and commence ProFile emulation.
       with image_mmap(FLAGS.image_file, FLAGS.create) as image:
-        try:
-          profile(image, rpmsg, leds)
-        except (Exception, KeyboardInterrupt) as error:
-          # Interrupted. Flush files once more to be safe.
-          logging.info('Shutting down cleanly...')
-          image[0].flush()
-          os.fsync(image[0].fileno())
-          # Just in case we didn't reinstall the signal handler in profile().
-          signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        with ImageFlusher(image) as flusher:
+          try:
+            profile(image, rpmsg, leds, flusher)
+          except (Exception, KeyboardInterrupt) as error:
+            # Interrupted. image_mmap will save and flush the image.
+            logging.info('Shutting down cleanly...')
+
+    # Just in case we didn't reinstall the signal handler in profile().
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
     # All done now. Depending on the exception that interrupted us, cycle or
     # flash the LEDs so that in "headless" installations it's clearer when the

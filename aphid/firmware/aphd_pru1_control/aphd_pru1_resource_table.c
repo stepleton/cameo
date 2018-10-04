@@ -62,11 +62,29 @@ struct pru1_resource_table PRU1_RESOURCE_TABLE = {
 
   .intc = {
     .type = TYPE_CUSTOM,
+    /* The rsc_types.h header changed between versions 9.4 and 9.5 of the OS to
+     * provide two ways to specify the custom resource sub-type. The change also
+     * defined the macro TYPE_PRELOAD_VENDOR, which was undefined before. We use
+     * this macro to identify which version of rsc_types.h we're using. */
+#ifdef TYPE_PRELOAD_VENDOR
+    .u = {
+      .sub_type = TYPE_PRU_INTS,
+    },
+#else
     .sub_type = TYPE_PRU_INTS,
+#endif
     .rsc_size = sizeof(struct fw_rsc_custom_ints),
     .rsc = {
       .pru_ints = {
+      /* The pru_types.h header changed between versions 9.4 and 9.5 of the OS
+       * to deprecate the version field of fw_rsc_custom_ints. The change also
+       * defined the macro PRU_INTS_VER0, which was undefined before. We use
+       * this macro to identify which version of pru_types.h we're using. */
+#ifdef PRU_INTS_VER0
+        .reserved = 0U,
+#else
         .version = 0U,
+#endif
         .channel_host = {
           0U,  /* Channel 0 (ePRU1to0): host interrupt 0, so r31 bit 30. */
           1U,  /* Channel 1 (ePRU0to1): host interrupt 1, so r31 bit 31. */

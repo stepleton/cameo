@@ -77,7 +77,7 @@ for informational purposes only; many are likely out-of-date):
   $0.66 each)
 * Two 2x18 0.1" pitch sockets ([e.g.](https://www.digikey.com/short/jr94rq);
   $2.06 each)
-* MicroSD memory card, 4GB or more, class 10 or better ($7 or so)
+* microSD memory card, 4GB or more, class 10 or better ($7 or so)
 * Jumper and termination 0603 surface-mount components as required by your
   application (assuming just one 0Ω jumper ([e.g.](
   https://www.digikey.com/short/jr9m80)) per I/O pin, $0.85 for all 16; free
@@ -87,7 +87,7 @@ costing $52.41 in total. If you are willing to bond the PocketBeagle and Cameo
 together permanently, you can omit the 2x18 sockets and save a bit over $4.
 
 Some applications may benefit from adapting the 26-pin header on the bottom of
-Cameo to a 25-pin DB-25 plug connector. To make this adapter, you can use:
+Cameo to a 25-pin DB-25 plug connector. To make this adaptor, you can use:
 
 * 2x13 0.1" pitch socket with IDC crimp termination ([e.g.](
   https://www.digikey.com/short/jrbw3d), $0.58)
@@ -115,7 +115,7 @@ configuration of these components are application-specific. See the
 details of the plugboard.
 
 When assembling the Cameo board, it may be advisable to place the two voltage
-translater ICs first, followed by the discrete SMD components and then by the
+translator ICs first, followed by the discrete SMD components and then by the
 through-hole headers/connectors. **Remember, Cameo expects to be slung
 underneath the PocketBeagle, so the 5V I/O header (centre) should emerge from
 the bottom of the board, while the headers (or sockets) for connecting to the
@@ -133,7 +133,7 @@ between the two connectors to be as short as possible.
 
 ## Header pinout
 
-The follwing pinout diagram represents Cameo's 26-pin 5V I/O header as viewed
+The following pinout diagram represents Cameo's 26-pin 5V I/O header as viewed
 from the underside of the Cameo PCB, with the PocketBeagle's USB connector
 pointing upward.
 
@@ -192,11 +192,11 @@ patterns for both are different:
 
 This diagram shows a top-side view of Cameo. (In this view, the through-holes
 for the 26-pin 5V I/O header (centre) are "flipped" about the header's long
-(horiziontal) axis, since the pins emerge from the underside of the board.)
+(horizontal) axis, since the pins emerge from the underside of the board.)
 
 The installation of jumpers, resistors, or other 0603 surface mount components
 on each set of five pads shaped like ⠾, ⠻, or ⠷ determines whether and how the
-labeled pin connects (through the voltage translator ICs) to the PocketBeagle.
+labelled pin connects (through the voltage translator ICs) to the PocketBeagle.
 
 ## Development
 
@@ -220,4 +220,4 @@ following people and resources:
   the [TI E2E Community](https://e2e.ti.com/).
 * Anonymous friends.
 
--- [_Tom Stepleton_](mailto:stepleton@gmail.com), 11 August 2017, London
+-- [_Tom Stepleton_](mailto:stepleton@gmail.com), 11 August 2018, London

@@ -4,7 +4,7 @@
 
 is a small Apple parallel port hard drive emulator based on the
 [PocketBeagle](http://beagleboard.org/pocket) single-board computer and the
-[Cameo](../README.md) 3.3V ⇄ 5V level adapter cape. The hardware and software
+[Cameo](../README.md) 3.3V ⇄ 5V level adaptor cape. The hardware and software
 described here aim to be a substitute for 5MB Apple
 [ProFile](https://en.wikipedia.org/wiki/Apple_ProFile) external hard drives,
 which were mainly used with Apple /// and Apple Lisa computers.
@@ -57,15 +57,23 @@ computer is off again, Cameo/Aphid can be shut down and turned off.
 
 Because Cameo/Aphid is based on the PocketBeagle, a single-board computer that
 must boot an operating system to function, Cameo/Aphid takes longer to become
-ready than a dedicated hardware emulator
-(e.g. [X/ProFile](http://sigmasevensystems.com/xprofile), [IDEfile](
-http://john.ccac.rwth-aachen.de:8000/patrick/idefile.htm)) does.
-**Additionally, like any modern computer (including the Apple Lisa),
-Cameo/Aphid must undergo a shutdown process before power can be shut off.**
-To accomplish this at any point after Cameo/Aphid is ready, press the [power
-button](https://github.com/beagleboard/pocketbeagle/wiki/System-Reference-Manual#333_Powering_Down)
+ready than a dedicated hardware emulator (e.g.
+[X/ProFile](http://sigmasevensystems.com/xprofile), [IDEfile](
+http://john.ccac.rwth-aachen.de:8000/patrick/idefile.htm)) does. Additionally,
+like any modern computer (including the Apple Lisa), Cameo/Aphid prefers to
+undergo a shutdown process before power is shut off.  To accomplish this at any
+point after Cameo/Aphid is ready, press the [power button](
+https://github.com/beagleboard/pocketbeagle/wiki/System-Reference-Manual#333_Powering_Down)
 and wait for the "chasing lights" pattern (see below) to stop. It should only
 take a few seconds.
+
+(Full shutdown is not as important on Debian 9.5 and later OS releases, as long
+as all the optional steps in the [installation instructions](
+#full-instructions-for-manual-software-installation) have been carried out.
+The [pre-made SD card image](#software-installation) was made in this way.
+Robustness to power cuts is one step toward making Cameo/Aphid a suitable
+replacement for Widget internal hard drives, though [other hurdles](
+#future-work) remain.)
 
 ![Locations of the User LEDs and power button on the PocketBeagle](pics/ui.jpg)
 
@@ -99,9 +107,9 @@ consumption data is hard to find for the PocketBeagle, but just about any USB
 power source that can charge a phone reasonably well will probably work. A
 computer with a USB-A port can supply power as well; don't be surprised by the
 PocketBeagle's operating system making the PocketBeagle appear to be both a
-network adapter and a storage device.
+network adaptor and a storage device.
 
-Most installations will connect Cameo/Aphid to the Apple via a short adapter
+Most installations will connect Cameo/Aphid to the Apple via a short adaptor
 cable like the one described in the [main Cameo README.md](
 ../README.md#assembly). In this configuration, Cameo/Aphid dangles from the
 Apple's DB-25 socket with no enclosure or physical support. If your Apple is
@@ -112,7 +120,7 @@ surface: stray electrical connections could result.
 ### Hard drive images
 
 Cameo/Aphid stores data from the simulated hard drive in an ordinary file on
-the PocketBeagle's MicroSD card. This file has no metadata and a very simple
+the PocketBeagle's microSD card. This file has no metadata and a very simple
 format: just as a ProFile stores 5,175,296 bytes of data, the hard drive image
 file is a 5,175,296-byte file; and just as a ProFile block is 532 bytes, each
 contiguous 532-byte chunk of the image file holds data from one of the
@@ -169,7 +177,7 @@ Cameo/Aphid uses the Texas Instruments [TXS0108E](
 http://www.ti.com/product/TXS0108E) series of level translator ICs. A complete
 parts list for assembling Cameo/Aphid appears in the [main Cameo README.md](
 ../README.md#costs). Nearly all installations will want to use the short
-adapter cable described there so that Cameo/Aphid can dangle from a parallel
+adaptor cable described there so that Cameo/Aphid can dangle from a parallel
 port on the Apple.
 
 This diagram shows the locations and values of all of the SMD components that
@@ -187,25 +195,31 @@ easy to put a jumper in the wrong place.
 The [main Cameo README.md](../README.md#assembly) has more detailed assembly
 information.
 
-When building a DB-25 port adapter to connect Cameo to the Apple: sometimes the
+When building a DB-25 port adaptor to connect Cameo to the Apple: sometimes the
 Apple's parallel port will have plastic material or a metal shim blocking pin
 7, which is unused. If this is the case for your system, remove pin 7 (the
-centre pin in the top, wider row of pins) from the adapter's DB-25 plug with a
+centre pin in the top, wider row of pins) from the adaptor's DB-25 plug with a
 pair of pliers. Some force may be required.
 
 ### Software installation
 
-The easiest way to install Cameo/Aphid software on a MicroSD card is to "flash"
+The easiest way to install Cameo/Aphid software on a microSD card is to "flash"
 a pre-built software image onto the card: it requires no skill with "Linux
 stuff". Download a software image (made with the instructions below) from [this
-link]( https://drive.google.com/open?id=1JVaIsEFMeORKmzB1lwtAaCIO8UU0FEhH)
-(note: a 431 MB file), then follow [these instructions](
+link](http://stepleton.com/cameo_aphid_image.php) (note: a circa 450 MB file,
+give or take a few dozen MB), then follow [these instructions](
 https://beagleboard.org/getting-started#update) on using Etcher to install the
-image onto a good quality MicroSD card (4GB or more, preferably [Class
-10/U1/V10](https://en.wikipedia.org/wiki/Secure_Digital#Speed_class_rating) or
-better). Once flashed, the card can be plugged into the PocketBeagle, and
+image onto a good quality microSD card (4GB or more, preferably [Class
+10/U1/V10]( https://en.wikipedia.org/wiki/Secure_Digital#Speed_class_rating) or
+better).  Once flashed, the card can be plugged into the PocketBeagle, and
 Cameo/Aphid will be ready for [use](#usage), appearing to the Apple as an empty
 (uninitialised) ProFile. The following instructions can then be ignored.
+
+(Technical note: The pre-built software image stores the ProFile disk image on
+a separate 512 MB FAT32 partition with the label `CAMEO_APHID`, which it mounts
+at `/usr/local/lib/cameo-aphid`. Only changes to files in this directory will
+persist between PocketBeagle power cycles and reboots; all changes to all other
+files and directories are temporary.)
 
 #### Full instructions for manual software installation
 
@@ -217,27 +231,28 @@ The Cameo/Aphid software comprises
   processor, interpreting sector read/write commands from the Apple and
   applying them to a hard drive image file.
 
-The software targets the `Debian 9.4 2018-06-17 4GB SD IoT` and `Debian 9.3
-2018-03-05 4GB SD IoT` BeagleBoard.org Debian Linux disk images, available
-[here](http://beagleboard.org/latest-images). If not listed under "Recommended
+The software targets the `Debian 9.5 2018-08-30 4GB SD IoT`, `Debian 9.4
+2018-06-17 4GB SD IoT`, and `Debian 9.3 2018-03-05 4GB SD IoT` BeagleBoard.org
+Debian Linux disk images, available [here](
+http://beagleboard.org/latest-images). If not listed under "Recommended
 Debian images", look for these images under "Older Debian images" further down
 on the page. Newer images may work but have not been tested.
 
 Follow these steps to set up the Cameo/Aphid software on your PocketBeagle:
 
-#### 1. Install the Linux disk image onto a new MicroSD card.
+#### 1. Install the Linux disk image onto a new microSD card.
 
 Download one of the Debian Linux disk images specified above from the
 BeagleBoard.org [Latest Firmware Images](http://beagleboard.org/latest-images)
-page (preferably the Debian 9.4 image). Follow the [instructions](
+page (preferably the Debian 9.5 image). Follow the [instructions](
 https://beagleboard.org/getting-started#update) to install it on a good quality
-MicroSD card. (The PocketBeagle used to develop the Cameo/Aphid software had a
+microSD card. (The PocketBeagle used to develop the Cameo/Aphid software had a
 card with a Class 10 [speed class rating](
 https://en.wikipedia.org/wiki/Secure_Digital#Speed_class_rating).)
 
 #### 2. Enable remoteproc/RPMsg for controlling the PocketBeagle's PRUs (Debian 9.3 only).
 
-:warning: **NOTE: This step is not required for the `Debian 9.4 2018-06-17 4GB
+:warning: **NOTE: This step is only required for the `Debian 9.3 2018-03-05 4GB
 SD IoT` Debian Linux disk image.**
 
 Boot your PocketBeagle and connect to it via SSH. As above, this usually
@@ -256,7 +271,7 @@ and just beneath it, add a new line with the following text:
     uboot_overlay_pru=/lib/firmware/AM335X-PRU-RPROC-4-9-TI-00A0.dtbo
 
 Take care to avoid typos or copy/paste errors: mistakes in `/boot/uEnv.txt` can
-leave your MicroSD card unbootable, and you'd need to start over from step 1.
+leave your microSD card unbootable, and you'd need to start over from Step 1.
 
 #### 3. Compile the firmware and prepare an empty 5MB disk image.
 
@@ -269,35 +284,73 @@ the compile by typing `make`. Compilation of the firmware and construction of
 the disk image (which is just an empty 5,175,296-byte file called
 `profile.image`) takes a couple dozen seconds.
 
-#### 4. Install the Aphid software, firmware, disk image, and service script.
+#### 4. (optional) Prepare a separate partition for Cameo/Aphid disk images.
 
-From the same directory, execute the command `make install` with superuser
-privileges. This command creates a permanent installation directory for the
-Cameo/Aphid software and disk image, then installs a file that tells the
-PocketBeagle to configure and start the entire Cameo/Aphid emulator system on
-boot. The specific steps that `make install` performs are:
+This optional step establishes a separate FAT32 partition on the SD card for
+ProFile disk image storage---required for setting up the robustness to power
+failure described in Step 8. First, from the directory created by Step 3,
+execute the script `setup_dos_partition_part1.sh` with superuser privileges,
+optionally with a size argument in bytes (a 512 MB partition is created by
+default). When this completes, reboot the PocketBeagle. Log in again, return to
+the same directory, and execute the script `setup_dos_partition_part2.sh`.
+
+Together, these scripts modify the SD card's partition table to add a
+partition, create a mount point for the partition at
+`/usr/local/lib/cameo-aphid`, create a FAT32 filesystem on the partition, and
+direct the OS to mount the new partition there on boot.
+
+#### 5. Install the Aphid software, firmware, disk image, and service script.
+
+From the directory created by Step 3, execute the command `make install` with
+superuser privileges. This command creates a permanent installation directory
+for the Cameo/Aphid software and disk image, then installs a file that tells
+the PocketBeagle to configure and start the entire Cameo/Aphid emulator system
+on boot. The specific steps that `make install` performs are:
 
 - Copy the PRU-ICSS firmware files `aphd_pru0_datapump.fw` and
   `aphd_pru1_control.fw` to the `/lib/firmware` directory.
-- Create the directory `/usr/local/lib/cameo-aphid` and copy the disk image
-  file `profile.image` and the Python program `profile.py` inside.
-- Copy the `cameo-aphid.service` service script to 
-  `/lib/systemd/system`.
+- Create the directory `/usr/local/lib/cameo-aphid` (if not already present)
+  and copy the disk image file `profile.image` and the Python program
+  `profile.py` inside.
+- Copy the `cameo-aphid.service` service script to `/lib/systemd/system`.
 
-#### 5. Tell the PocketBeagle to start the Cameo/Aphid emulator system on boot.
+#### 6. Tell the PocketBeagle to start the Cameo/Aphid emulator system on boot.
 
 With superuser privileges, execute the command `systemctl enable cameo-aphid`.
 
-Software installation is complete after this step. The next time the
+Basic software installation is complete after this step. The next time the
 PocketBeagle boots, the Cameo/Aphid emulator should be ready to emulate a 5 MB
 Apple ProFile hard drive. See the [Usage](#usage) section of this file for
 usage instructions.
 
+The following steps are optional, but useful.
+
+#### 7. (optional) Disable unneeded Linux system services.
+
+With superuser privileges, and in the directory created by Step 3, run the
+script `setup_trim_services.sh`. This disables some PocketBeagle system
+services that aren't useful for hard disk emulation, which shaves a few seconds
+off the time it takes Cameo/Aphid to be ready after power-on.
+
+#### 8. (optional) Enable power-off robustness for the root filesystem.
+
+Only if Step 5 has been carried out, run the script `setup_overlayroot.sh` with
+superuser privileges. This causes the PocketBeagle to boot into a mode where
+files on the root filesystem cannot be changed; instead, changes are stored
+temporarily in the PocketBeagle's RAM and are lost when the PocketBeagle shuts
+down or reboots. The separate filesystem for disk images set up in Step 5 is
+not affected and writes to emulated ProFiles will still be saved.
+
+This step makes it safer to shut off power to Cameo/Aphid without undergoing
+the formal shutdown process triggered by pressing the power button. The root
+filesystem cannot be damaged by uncommitted writes, and changes to the FAT32
+filesystem containing disk image data are frequently committed to the SD card.
+
 ## Technical overview
 
-The information in this section is not necessary to build or use Cameo, but may
-be of interest to people interested in making modifications or investigating
-similar applications.
+The information in this section is not necessary to build or use Cameo/Aphid,
+but may be of interest to people interested in making modifications or
+investigating similar applications.
 
 Cameo/Aphid takes advantage of the PocketBeagle's [PRU-ICSS coprocessors](
 http://processors.wiki.ti.com/index.php/PRU-ICSS) ("PRUs" for short) to achieve
@@ -363,20 +416,19 @@ Potential future improvements and new features for Cameo/Aphid include:
 * 10MB ProFile emulation (easy), or Widget emulation (harder, since many more
   low-level hard drive commands are required).
 
-* Support for Lisa 2/10 drive bay installation: while 5V power is available
-  from the same cable that powered the original Widget hard drive, since the
-  drive bay is not accessible while the Lisa is on, it will be necessary to
-  have some way of powering down the PocketBeagle cleanly before the Lisa
-  shuts off hard drive power on shutdown. Additionally, the longer ribbon cable
-  for connecting the Widget to the I/O board may require terminating resistors
-  or other components to be installed on Cameo. Finally, some substitute for
-  the green hard drive status LED should be devised.
+* Support for Lisa 2/10 drive bay installation: increased robustness to power
+  cuts allow Cameo/Aphid to operate within the enclosed drive bay, even though
+  a Lisa powering down can shut down internal hard drives without warning.
+  Nevertheless, the longer ribbon cable for connecting the Widget to the I/O
+  board appears to require terminating resistors or other components to be
+  installed on Cameo. Finally, some substitute for the green hard drive status
+  LED should be devised.
 
 * A web browser interface for hard drive image file management: by plugging
   Cameo/Aphid into a modern computer and visiting a designated web address, the
   user can upload and download hard drive image files to an image library, as
   well as select an "active" image that Cameo/Aphid serves to the Apple.
-  (Even a relatively small MicroSD card could easily store several thousand
+  (Even a relatively small microSD card could easily store several thousand
   hard drive image files.)
 
 * A "magic blocks" mechanism: if the Apple attempts to read or write to a
@@ -450,4 +502,15 @@ of the following people and resources:
   community.
 * Anonymous friends.
 
--- [_Tom Stepleton_](mailto:stepleton@gmail.com), 11 August 2017, London
+## Revision history
+
+11 August 2018: Initial release.
+(Tom Stepleton, [stepleton@gmail.com](mailto:stepleton@gmail.com), London)
+
+4 October 2018: Debian 9.5 support, power-cut resilience, boot time,
+SD card longevity (Tom Stepleton)
+- Debian 9.5 support: adapt to changes to resource table field names and layout.
+- Power-cut resilience: introduce a separate FAT32 partition for disk images.
+- Power-cut resilience: add overlayfs protection for root filesystem.
+- Boot time: disable unused Linux services.
+- SD card longevity: only sync disk image changes every four seconds.
