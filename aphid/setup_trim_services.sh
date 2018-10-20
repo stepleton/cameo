@@ -14,6 +14,33 @@
 # File listing the BeagleBoard image we're using.
 ID_FILE='/ID.txt'
 
+# We disable these systemd entities for the 2018-10-07 image:
+DISABLE_20181007="\
+    apache2.service \
+    atd.service \
+    avahi-daemon.service \
+    bb-wl18xx-bluetooth.service \
+    bb-wl18xx-wlan0.service \
+    bluetooth.service \
+    bonescript-autorun.service \
+    console-setup.service \
+    cron.service \
+    getty@.service \
+    keyboard-setup.service \
+    pppd-dns.service \
+    rc_battery_monitor.service \
+    robotcontrol.service \
+    rsync.service \
+    rsyslog.service \
+    serial-getty@.service \
+    systemd-timesyncd.service \
+    bonescript.socket \
+    cloud9.socket \
+    node-red.socket \
+    remote-fs.target \
+    apt-daily-upgrade.timer \
+    apt-daily.timer"
+
 # We disable these systemd entities for the 2018-08-30 image:
 DISABLE_20180830="\
     apache2.service \
@@ -62,7 +89,9 @@ if [ ! -f $ID_FILE ]; then
 fi
 ID=`cat $ID_FILE`
 
-if [ "$ID" = 'BeagleBoard.org Debian Image 2018-08-30' ]; then
+if [ "$ID" = 'BeagleBoard.org Debian Image 2018-10-07' ]; then
+  disable_systemd_entities $DISABLE_20181007
+elif [ "$ID" = 'BeagleBoard.org Debian Image 2018-08-30' ]; then
   disable_systemd_entities $DISABLE_20180830
 # elif a different image...
 else

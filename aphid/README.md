@@ -231,12 +231,17 @@ The Cameo/Aphid software comprises
   processor, interpreting sector read/write commands from the Apple and
   applying them to a hard drive image file.
 
-The software targets the `Debian 9.5 2018-08-30 4GB SD IoT`, `Debian 9.4
-2018-06-17 4GB SD IoT`, and `Debian 9.3 2018-03-05 4GB SD IoT` BeagleBoard.org
-Debian Linux disk images, available [here](
-http://beagleboard.org/latest-images). If not listed under "Recommended
-Debian images", look for these images under "Older Debian images" further down
-on the page. Newer images may work but have not been tested.
+The software targets the following BeagleBone.org Debian Linux disk images:
+
+* `Debian 9.5 2018-10-07 4GB SD IoT`
+* `Debian 9.5 2018-08-30 4GB SD IoT`
+* `Debian 9.4 2018-06-17 4GB SD IoT`
+* `Debian 9.3 2018-03-05 4GB SD IoT`
+
+available [here](http://beagleboard.org/latest-images). If none of these are
+listed under "Recommended Debian images", look for them under "Older Debian
+images" further down on the page. Newer images may work but have not been
+tested.
 
 Follow these steps to set up the Cameo/Aphid software on your PocketBeagle:
 
@@ -416,13 +421,32 @@ Potential future improvements and new features for Cameo/Aphid include:
 * 10MB ProFile emulation (easy), or Widget emulation (harder, since many more
   low-level hard drive commands are required).
 
-* Support for Lisa 2/10 drive bay installation: increased robustness to power
-  cuts allow Cameo/Aphid to operate within the enclosed drive bay, even though
-  a Lisa powering down can shut down internal hard drives without warning.
-  Nevertheless, the longer ribbon cable for connecting the Widget to the I/O
-  board appears to require terminating resistors or other components to be
-  installed on Cameo. Finally, some substitute for the green hard drive status
-  LED should be devised.
+* Support for Lisa 2/10 drive bay installation: an ongoing effort.
+
+  - :heavy_check_mark:
+    Increased robustness to power cuts allow Cameo/Aphid to operate within the
+    enclosed drive bay, even though a Lisa powering down can shut down internal
+    hard drives without warning.
+
+  - :soon:
+    The longer ribbon cable that the 2/10 uses to connect to the Widget in the
+    drive bay causes signal quality issues that can lead to malfunctions,
+    likely due to ringing or reflections that can confuse the TXS0108E level
+    adaptor ICs about signal direction. Current investigation on a breakout
+    board suggests that substituting 100Ω resistors for the 0Ω jumpers on all
+    Cameo signal lines except PEX1, PEX2, and PEX3 will dampen the ringing well     enough for Cameo/Aphid to work.
+  
+  - :x:
+    When Cameo/Aphid and a Lisa 2/10 are powered on at the same time, the Lisa
+    boot ROM will attempt to boot from Cameo/Aphid before it is ready, leading
+    to a boot error. (Once Cameo/Aphid is ready, the user can then select
+    "STARTUP FROM..." to get to the boot menu, then choose to boot from the
+    internal drive as usual.) Some other remedy is required before a Lisa 2/10
+    can boot from an internally-installed Cameo/Aphid without any user input.
+
+  - :man_shrugging:
+    Finally, some substitute for the green hard drive status LED should be
+    devised.
 
 * A web browser interface for hard drive image file management: by plugging
   Cameo/Aphid into a modern computer and visiting a designated web address, the
@@ -514,3 +538,5 @@ SD card longevity (Tom Stepleton)
 - Power-cut resilience: add overlayfs protection for root filesystem.
 - Boot time: disable unused Linux services.
 - SD card longevity: only sync disk image changes every four seconds.
+
+20 October 2018: Update to the BeagleBoard.org 2018-10-07 Debian 9.5 image.
