@@ -362,8 +362,8 @@ http://processors.wiki.ti.com/index.php/PRU-ICSS) ("PRUs" for short) to achieve
 a dependable implementation of the Apple parallel port hard drive protocol.
 Like the I/O subsystems on modern PCs or the [channel controllers](
 https://en.wikipedia.org/wiki/Channel_I/O) on mainframes of yore, the PRUs
-units handle the timing-sensitive low-level details of the protocol so that the
-main processor can handle its various custodial tasks on its own schedule.
+handle the timing-sensitive low-level details of the protocol so that the main
+processor can attend to various custodial tasks on its own schedule.
 
 The PocketBeagle's [AM3358 SoC](http://www.ti.com/product/AM3358) includes two
 PRUs. Each PRU has a different pattern of direct connectivity to the pins of
@@ -428,13 +428,13 @@ Potential future improvements and new features for Cameo/Aphid include:
     enclosed drive bay, even though a Lisa powering down can shut down internal
     hard drives without warning.
 
-  - :soon:
+  - :heavy_check_mark:
     The longer ribbon cable that the 2/10 uses to connect to the Widget in the
     drive bay causes signal quality issues that can lead to malfunctions,
     likely due to ringing or reflections that can confuse the TXS0108E level
-    adaptor ICs about signal direction. Current investigation on a breakout
-    board suggests that substituting 100Ω resistors for the 0Ω jumpers on all
-    Cameo signal lines except PEX1, PEX2, and PEX3 will dampen the ringing well     enough for Cameo/Aphid to work.
+    adaptor ICs about signal direction. Inline 100Ω terminating resistors on all
+    Cameo signal lines except PEX1, PEX2, and PEX3 appears to dampen the ringing
+    well enough for Cameo/Aphid to work.
   
   - :x:
     When Cameo/Aphid and a Lisa 2/10 are powered on at the same time, the Lisa
@@ -540,3 +540,6 @@ SD card longevity (Tom Stepleton)
 - SD card longevity: only sync disk image changes every four seconds.
 
 20 October 2018: Update to the BeagleBoard.org 2018-10-07 Debian 9.5 image.
+
+7 December 2018: Inline 100Ω terminating resistors on signal lines for improved
+performance with longer cables.

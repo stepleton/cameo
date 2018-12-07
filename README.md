@@ -74,16 +74,17 @@ for informational purposes only; many are likely out-of-date):
 * One 2x13 0.1" pitch pin header ([e.g.](https://www.digikey.com/short/jr9439);
   plastic shroud at your discretion; $0.30)
 * Two 2x18 0.1" pitch pin headers ([e.g.](https://www.digikey.com/short/jr94b9);
-  $0.66 each)
+  $0.69 each)
 * Two 2x18 0.1" pitch sockets ([e.g.](https://www.digikey.com/short/jr94rq);
   $2.06 each)
 * microSD memory card, 4GB or more, class 10 or better ($7 or so)
-* Jumper and termination 0603 surface-mount components as required by your
-  application (assuming just one 0Ω jumper ([e.g.](
-  https://www.digikey.com/short/jr9m80)) per I/O pin, $0.85 for all 16; free
-  if you make your own from scrap wire)
+* Jumper and termination 0603 surface-mount components for I/O pins as required
+  by your application (assuming the [Aphid](aphid/) configuration with 3 0Ω
+  jumpers ([e.g.](https://www.digikey.com/short/jr9m80)) and 13 100Ω inline
+  terminating resistors ([e.g.](https://www.digikey.com/short/j1rr2w)), $0.53
+  altogether; jumpers are free if you make your own from scrap wire)
 
-costing $52.41 in total. If you are willing to bond the PocketBeagle and Cameo
+costing $52.15 in total. If you are willing to bond the PocketBeagle and Cameo
 together permanently, you can omit the 2x18 sockets and save a bit over $4.
 
 Some applications may benefit from adapting the 26-pin header on the bottom of
