@@ -185,12 +185,13 @@ should be installed on the Cameo PCB to support Aphid:
 
 ![All surface mount components for Cameo/Aphid](pics/smd_layout.png)
 
-The jumpers on the "plugboard" pads establish a direct connection between the
-5V I/O header pins and the level translator chip. There are no terminating
-resistors (or any other kind of termination) installed, so the connection to
-the Apple should be short. Take care to replicate the positioning of all
-components exactly---the plugboard pads are tightly spaced, and it's especially
-easy to put a jumper in the wrong place.
+The jumpers on the "plugboard" pads establish connections between the 5V I/O
+header pins and the level translator chip. The current design uses 100Ω
+terminating resistors for these connections to support longer cables between
+Cameo/Aphid and the Apple; in general, though, shorter cables are preferable.
+Take care to replicate the positioning of all components exactly---the
+plugboard pads are tightly spaced, and it's especially easy to put a jumper in
+the wrong place.
 
 The [main Cameo README.md](../README.md#assembly) has more detailed assembly
 information.
@@ -206,11 +207,11 @@ pair of pliers. Some force may be required.
 The easiest way to install Cameo/Aphid software on a microSD card is to "flash"
 a pre-built software image onto the card: it requires no skill with "Linux
 stuff". Download a software image (made with the instructions below) from [this
-link](http://stepleton.com/cameo_aphid_image.php) (note: a circa 450 MB file,
-give or take a few dozen MB), then follow [these instructions](
+link](http://stepleton.com/cameo_aphid_image.php) (note: a circa 600 MB file,
+give or take several dozen MB), then follow [these instructions](
 https://beagleboard.org/getting-started#update) on using Etcher to install the
 image onto a good quality microSD card (4GB or more, preferably [Class
-10/U1/V10]( https://en.wikipedia.org/wiki/Secure_Digital#Speed_class_rating) or
+10/U1/V10](https://en.wikipedia.org/wiki/Secure_Digital#Speed_class_rating) or
 better).  Once flashed, the card can be plugged into the PocketBeagle, and
 Cameo/Aphid will be ready for [use](#usage), appearing to the Apple as an empty
 (uninitialised) ProFile. The following instructions can then be ignored.
@@ -233,6 +234,7 @@ The Cameo/Aphid software comprises
 
 The software targets the following BeagleBone.org Debian Linux disk images:
 
+* `Debian 9.9 2019-08-03 4GB SD IoT`
 * `Debian 9.5 2018-10-07 4GB SD IoT`
 * `Debian 9.5 2018-08-30 4GB SD IoT`
 * `Debian 9.4 2018-06-17 4GB SD IoT`
@@ -249,7 +251,7 @@ Follow these steps to set up the Cameo/Aphid software on your PocketBeagle:
 
 Download one of the Debian Linux disk images specified above from the
 BeagleBoard.org [Latest Firmware Images](http://beagleboard.org/latest-images)
-page (preferably the Debian 9.5 image). Follow the [instructions](
+page (preferably the Debian 9.9 image). Follow the [instructions](
 https://beagleboard.org/getting-started#update) to install it on a good quality
 microSD card. (The PocketBeagle used to develop the Cameo/Aphid software had a
 card with a Class 10 [speed class rating](
@@ -264,7 +266,7 @@ Boot your PocketBeagle and connect to it via SSH. As above, this usually
 entails plugging the PocketBeagle into your computer's USB port and logging in
 to `beaglebone.local` as user `debian` with password `temppwd`. For more
 guidance on connecting to your PocketBeagle, see the [BeagleBone "Getting
-Started" guide](http://beagleboard.org/static/beaglebone/latest/README.htm).
+Started" guide](http://beagleboard.org/getting-started).
 
 Once in, edit the file `/boot/uEnv.txt` with superuser privileges. Find the
 line containing this text:
@@ -543,3 +545,5 @@ SD card longevity (Tom Stepleton)
 
 7 December 2018: Inline 100Ω terminating resistors on signal lines for improved
 performance with longer cables.
+
+6 November 2019: Debian 9.9 support.

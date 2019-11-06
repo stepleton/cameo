@@ -294,7 +294,7 @@ def boot_pru_firmware(device):
   # Despite all these precautions, it seems necessary to wait a bit to be
   # assured that the PRU is ready for RPMsg communication, particularly after
   # reboots. This is an empirical finding. It probably depends on load :-(
-  time.sleep(5.0)
+  time.sleep(15.0)
 
   # The firmware waits for an RPMsg message in order to learn critical
   # identifiers for communicating back to the ARM. Here we send it a
