@@ -131,7 +131,7 @@ starting from block $0000 and counting up to block $25FF.
 distinguish between "tag bytes" or "data bytes", even though these divisions of
 a block are important to Lisas.)
 
-The operation system that runs on Cameo/Aphid's PocketBeagle computer is a
+The operating system that runs on Cameo/Aphid's PocketBeagle computer is a
 version of Debian Linux. In standard Cameo/Aphid setups, the hard drive image
 file is `/usr/local/lib/cameo-aphid/profile.image`. To gain access to this
 file, for instance to make a backup or to replace it with a different disk
@@ -150,6 +150,37 @@ web browser.
 the Apple is actively reading from or writing to the simulated disk drive.
 After altering the image file, you must shut down and restart Cameo/Aphid
 before the Apple attempts to access the drive.**
+
+### For programmers
+
+Cameo/Aphid allows the Apple to restart or shut down ProFile emulation via
+specially-formatted writes. The Apple can use this "control writes" mechanism
+to change the hard drive image file that Cameo/Aphid uses for reads and writes.
+
+The following "control writes" are made to the non-existent sector $FFFFFD,
+with $FE as the retry count parameter and $AF as the sparing threshold
+parameter:
+
+- Writing sector data that begins with the null-terminated string "HALT" (i.e.
+  `$48,$41,$4C,$54,$00`) causes Cameo/Aphid to cease ProFile emulation. This
+  does not shut down the PocketBeagle itself. When emulation is halted, the
+  four user LEDs will blink sequentially in a rapid "chasing" or "rotating"
+  pattern.
+
+- Writing sector data that begins with "IMAGE:" (i.e. `$49,$4D,$41,$47,$45,$3A`)
+  and then continues with the null-terminated name of a file residing in the
+  working directory of the Cameo/Aphid ProFile emulator Python program, causes
+  Cameo/Aphid to restart ProFile emulation with this file as the hard drive
+  image that it uses for reads and writes. For extra safety, the filename must
+  end in ".image".
+
+- Writing any other sector data will cause Cameo/Aphid to restart ProFile
+  emulation with the same hard drive image file that it was using prior to the
+  write.
+
+Restarting ProFile emulation takes less than a second, but no effort has been
+made to determine what happens if the Apple tries to interact with Cameo/Aphid
+during this interval.
 
 ## Making your own
 
@@ -542,8 +573,12 @@ SD card longevity (Tom Stepleton)
 - SD card longevity: only sync disk image changes every four seconds.
 
 20 October 2018: Update to the BeagleBoard.org 2018-10-07 Debian 9.5 image.
+(Tom Stepleton)
 
 7 December 2018: Inline 100Ω terminating resistors on signal lines for improved
-performance with longer cables.
+performance with longer cables. (Tom Stepleton)
 
-6 November 2019: Debian 9.9 support.
+6 November 2019: Debian 9.9 support. (Tom Stepleton)
+
+12 January 2020: Upgraded `profile.py` to Python 3.5; the Apple can now command
+the emulator to use a different boot image or cease emulation. (Tom Stepleton)

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 """Apple parallel port storage emulator for Cameo
 
 Forfeited into the public domain with NO WARRANTY. Read LICENSE for details.
@@ -30,14 +30,8 @@ Any other light pattern that persists at length is either an indication that
 the emulator is not running or that some other, unforeseen error has occurred.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import argparse
-import binascii
 import contextlib
-import fcntl
 import logging
 import mmap
 import os
@@ -47,6 +41,8 @@ import struct
 import sys
 import threading
 import time
+
+from typing import BinaryIO, Generator, Iterator, Optional, Tuple, NamedTuple
 
 
 ###################
@@ -59,23 +55,26 @@ IMAGE_SIZE = 5175296  # Hard drive image size in bytes.
 SECTOR_SIZE = 532  # Sector size in bytes. Note "block size" in SPARE_TABLE.
 
 SPARE_TABLE = (  # The sector $FFFFFF spare table for a healthy 5MB ProFile.
-    'PROFILE      '  # Device name. This indicates a 5MB ProFile.
-    '\x00\x00\x00'   # Device number. Also means "5MB ProFile".
-    '\x03\x98'       # Firmware revision $0398. (Latest sold?)
-    '\x00\x26\x00'   # Blocks available. 9,728 blocks.
-    '\x02\x14'       # Block size. 532 bytes.
-    '\x20'           # Spare blocks on device. 20 blocks.
-    '\x00'           # Spare blocks allocated. 0 blocks.
-    '\x00'           # Bad blocks allocated. 0 blocks.
-    '\xff\xff\xff'   # End of the list of (zero) spare blocks.
-    '\xff\xff\xff'   # End of the list of (zero) bad blocks.
-) + '\x00' * (532 - 32)
+    b'PROFILE      '  # Device name. This indicates a 5MB ProFile.
+    b'\x00\x00\x00'   # Device number. Also means "5MB ProFile".
+    b'\x03\x98'       # Firmware revision $0398. (Latest sold?)
+    b'\x00\x26\x00'   # Blocks available. 9,728 blocks.
+    b'\x02\x14'       # Block size. 532 bytes.
+    b'\x20'           # Spare blocks on device. 20 blocks.
+    b'\x00'           # Spare blocks allocated. 0 blocks.
+    b'\x00'           # Bad blocks allocated. 0 blocks.
+    b'\xff\xff\xff'   # End of the list of (zero) spare blocks.
+    b'\xff\xff\xff'   # End of the list of (zero) bad blocks.
+) + bytes(532 - 32)
 
-# We use these statistically-unusual sequences of bytes to command the
-# Aphid PRU1 firmware to execute various operations.
-APHD_COMMAND_GET = 0xf137a98c
-APHD_COMMAND_PUT = 0xc74b95db
-APHD_COMMAND_GOAHEAD = 0xea7393a6
+# For the beginning of command messages that tell the Aphid PRU1 firmware to
+# execute various operations, we use statistically-unusual sequences of bytes.
+APHD_COMMAND_GET_PART_1 = b'\x8c\xa9\x37\xf1' + struct.pack('<HH', 0, 266)
+APHD_COMMAND_GET_PART_2 = b'\x8c\xa9\x37\xf1' + struct.pack('<HH', 266, 266)
+APHD_COMMAND_PUT_PART_1 = b'\xdb\x95\x4b\xc7' + struct.pack('<HH', 0, 354)
+APHD_COMMAND_PUT_PART_2 = b'\xdb\x95\x4b\xc7' + struct.pack('<HH', 354, 354)
+APHD_COMMAND_PUT_PART_3 = b'\xdb\x95\x4b\xc7' + struct.pack('<HH', 708, 356)
+APHD_COMMAND_GOAHEAD = b'\xa6\x93\x73\xea' + struct.pack('<HH', 0, 0)
 
 # Here are the various ProFile operations that we pretend to do.
 PROFILE_READ = 0x00
@@ -101,13 +100,16 @@ LED_PREFIX = '/sys/class/leds/beaglebone:green:usr'
 # The device we use to communicate with PRU1 over RPMsg
 RPMSG_DEVICE = '/dev/rpmsg_pru31'
 
+# Precomputed even parity lookup table.
+PARITY = tuple(0x00 if bin(c).count('1') % 2 else 0xff for c in range(256))
+
 
 ##############################
 #### Command-line parsing ####
 ##############################
 
 
-def _define_flags():
+def _define_flags() -> argparse.ArgumentParser:
   """Defines an `ArgumentParser` for command-line flags used by this program."""
 
   flags = argparse.ArgumentParser(description='Cameo/Aphid ProFile emulator.')
@@ -140,7 +142,7 @@ def _define_flags():
 ######################
 
 
-class LEDs(object):
+class LEDs:
   """Context manager and object for controlling the PocketBeagle user LEDs.
 
   On entry into the context, filehandles for the user LEDs are opened; on exit,
@@ -148,9 +150,9 @@ class LEDs(object):
   to turn LEDs on, turn them off, or cycle them through a blinking pattern.
   """
 
-  def __enter__(self):
-    led_files = ['{}{}/brightness'.format(LED_PREFIX, i) for i in xrange(4)]
-    self._leds = [open(lf, 'w', buffering=0) for lf in led_files]
+  def __enter__(self) -> 'LEDs':
+    led_files = ['{}{}/brightness'.format(LED_PREFIX, i) for i in range(4)]
+    self._leds = [open(lf, 'wb', buffering=0) for lf in led_files]
     # State for cycling the LEDs.
     self._current_in_cycle = 0   # Current state of the LED cycler.
     self._cycling_now = False    # Should we be cycling the LEDs right now?
@@ -162,19 +164,19 @@ class LEDs(object):
 
   def on(self):
     """All LEDs on, full blast."""
-    for led in self._leds: led.write('255\n')
+    for led in self._leds: led.write(b'255\n')
 
   def off(self):
     """All LEDs off, completely."""
-    for led in self._leds: led.write('0\n')
+    for led in self._leds: led.write(b'0\n')
 
   ### And now, cycling. Serious business! ###
 
   def cycle_one_step(self):
     """Execute one step of a cycling pattern."""
-    self._leds[self._current_in_cycle].write('0\n')
+    self._leds[self._current_in_cycle].write(b'0\n')
     self._current_in_cycle = (self._current_in_cycle + 1) % len(self._leds)
-    self._leds[self._current_in_cycle].write('255\n')
+    self._leds[self._current_in_cycle].write(b'255\n')
 
   def _cycle_while_allowed(self):
     """Cycle all four LEDs as long as a flag tells us we should."""
@@ -191,15 +193,15 @@ class LEDs(object):
     """Blink the centre two LEDs till the end of time."""
     self.off()
     while True:
-      self._leds[1].write('255\n')
-      self._leds[2].write('255\n')
+      self._leds[1].write(b'255\n')
+      self._leds[2].write(b'255\n')
       time.sleep(1.0)
-      self._leds[1].write('0\n')
-      self._leds[2].write('0\n')
+      self._leds[1].write(b'0\n')
+      self._leds[2].write(b'0\n')
       time.sleep(1.0)
 
   @contextlib.contextmanager
-  def cycling_in_background(self):
+  def cycling_in_background(self) -> Iterator[None]:
     """Within this context, cycle the LEDs in a background thread."""
     if self._cycling_now: raise RuntimeError(
         'Attempted to start cycling LEDs whilst they were already cycling.')
@@ -253,7 +255,7 @@ def boot_pru_firmware(device):
 
   # Immediately after the PocketBeagle boots, the filesystem objects for
   # controlling PRUs may not be available. We wait on them for up to a minute.
-  for _ in xrange(600):
+  for _ in range(600):
     if all(os.path.exists(p) for p in [
         PRU0_STATE_PATH, PRU1_STATE_PATH,
         PRU0_FW_CHOOSER_PATH, PRU1_FW_CHOOSER_PATH]): break
@@ -284,7 +286,7 @@ def boot_pru_firmware(device):
 
   # Wait for both PRUs to be up and running.
   for i in (0, 1):
-    for _ in xrange(600):
+    for _ in range(600):
       with open([PRU0_STATE_PATH, PRU1_STATE_PATH][i], 'r') as f:
         if f.read() == 'running\n': break
       time.sleep(0.1)
@@ -299,7 +301,7 @@ def boot_pru_firmware(device):
   # The firmware waits for an RPMsg message in order to learn critical
   # identifiers for communicating back to the ARM. Here we send it a
   # meaningless message as soon as we can, or give up after a minute of trying.
-  for _ in xrange(600):
+  for _ in range(600):
     try:
       with open(device, 'w') as f: f.write('\n')
       break
@@ -314,27 +316,38 @@ def boot_pru_firmware(device):
 ###########################
 
 
-def rpmsg_io_init(device):
+class Rpmsg(NamedTuple(
+    'Rpmsg', [('fd', int),
+              ('poll_read', select.poll),
+              ('poll_write', select.poll)])):
+  """I/O-related objects for RPMsg communication with PRU1.
+
+  Use `rpmsg_io_init` to initialise/prepare this data structure.
+
+  Fields:
+    fd: A prepared read-write file descriptor for an RPMsg device file.
+    poll_read: For detecting when reads will not block.
+    poll_write: For detecting when writes will not block.
+  """
+
+
+def rpmsg_io_init(fd: int) -> Rpmsg:
   """Prepare a file object for RPMsg I/O and derive `select.poll` objects.
 
-  The argument file object should be the device file used for two-way RPMsg
-  communication with PRU1 running the Aphid PRU1 firmware. The underlying file
-  descriptor will be set to non-blocking mode, and two `select.poll` objects
-  (for blocking until it's OK to read/write) will be created for it.
+  The argument file descriptor should be the device file used for two-way RPMsg
+  communication with PRU1 running the Aphid PRU1 firmware. This descriptor will
+  be set to non-blocking mode, and two `select.poll` objects (for blocking
+  until it's OK to read/write) will be created for it.
 
   Args:
-    device: A file object referring to the PRU1 RPMsg device file.
+    fd: A file descrptor referring to the PRU1 RPMsg device file. This
+        descriptor will be manipulated as described above.
 
   Returns:
-    A 3-tuple with these elements:
-        [0]: the original device file,
-        [1]: a `select.poll` object for detecting when writes will not block,
-        [2]: a `select.poll` object for detecting when reads will not block.
+    An Rpmsg object initialised from `fd`.
   """
   # Set reads on the device file object to non-blocking.
-  fd = device.fileno()
-  flag = fcntl.fcntl(fd, fcntl.F_GETFD)
-  fcntl.fcntl(fd, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+  os.set_blocking(fd, False)
 
   # Create select.poll objects for waiting on the file object
   # for both reading and writing.
@@ -344,10 +357,10 @@ def rpmsg_io_init(device):
   poll_write.register(fd, select.POLLOUT)
 
   # Pack all RPMsg I/O objects and return.
-  return (device, poll_read, poll_write)
+  return Rpmsg(fd, poll_read, poll_write)
 
 
-def rpmsg_read(rpmsg, length, delay=5.0):
+def rpmsg_read(rpmsg: Rpmsg, length: int, delay: float = 5.0) -> bytes:
   """Read `length` bytes from PRU1 via RPMsg.
 
   When data from PRU1 is available, this function will attempt to read all of
@@ -359,21 +372,20 @@ def rpmsg_read(rpmsg, length, delay=5.0):
   be typical.)
 
   Args:
-    rpmsg: A 3-tuple of the kind created by `rpmsg_io_init`.
+    rpmsg: An Rpmsg object returned by `rpmsg_io_init`.
     length: How many bytes to read.
     delay: How long in seconds to block while waiting for data from PRU1. A
         negative value means wait indefinitely.
 
   Returns:
-    A string of up to `length` bytes read from PRU1 via RPMsg.
+    A bytes object of up to `length` bytes read from PRU1 via RPMsg.
 
   Raises:
     RuntimeError: Failed (probably timed out) whilst waiting for RPMsg data
         from PRU1.
   """
-  # Unpack RPMsg I/O objects; get device file descriptor; compute delay in ms.
-  device, poll_read, _ = rpmsg
-  fd = device.fileno()
+  # Unpack RPMsg I/O objects; compute delay in ms.
+  fd, poll_read, _ = rpmsg
   delay = int(1000 * delay)
 
   # Wait for data to be ready to read.
@@ -381,30 +393,30 @@ def rpmsg_read(rpmsg, length, delay=5.0):
       'Waiting for data from PRU 1 on the RPMsg device was unsuccessful.')
 
   # Read as much data as possible, 2k at a time; drain the file descriptor.
-  all_data = []
+  all_data_parts = []
   while True:
     data = os.read(fd, 2048)
-    all_data.append(data)
+    all_data_parts.append(data)
     if len(data) < 2048: break
 
   # Return just those bytes requested. If we have collected more than the
   # number of bytes requested, we assume the oldest ones are stale and only
   # return the most recent values.
-  all_data = ''.join(all_data)
+  all_data = b''.join(all_data_parts)
   if len(all_data) != length: logging.warning(
       'Expected to read %d bytes from PRU1; read %d instead.',
       length, len(all_data))
   return all_data[-length:]
 
 
-def rpmsg_write(rpmsg, data, delay=5.0):
+def rpmsg_write(rpmsg: Rpmsg, data: bytes, delay: float = 5.0):
   """Write `data` to PRU1 via RPMsg.
 
   Attempts (with some persistence) to write all of `data` to PRU1 via RPMsg.
 
   Args:
-    rpmsg: A 3-tuple of the kind created by `rpmsg_io_init`.
-    data: String of data to send to PRU1.
+    rpmsg: An Rpmsg object returned by `rpmsg_io_init`.
+    data: bytes object of data to send to PRU1.
     delay: How long in seconds to block each time we wait until it is possible
         to write data to PRU1. A negative value means wait indefinitely.
 
@@ -412,9 +424,8 @@ def rpmsg_write(rpmsg, data, delay=5.0):
     RuntimeError: Failed (probably timed out) whilst waiting for it to be
         possible to write RPMsg data to PRU1.
   """
-  # Unpack RPMsg I/O objects; get device file descriptor; compute delay in ms.
-  device, _, poll_write = rpmsg
-  fd = device.fileno()
+  # Unpack RPMsg I/O objects; compute delay in ms.
+  fd, _, poll_write = rpmsg
   delay = int(1000 * delay)
 
   # Write data out bit by bit.
@@ -425,8 +436,7 @@ def rpmsg_write(rpmsg, data, delay=5.0):
     if written <= 0:  # If nothing was written, let's wait until we can write.
       if poll_write.poll(delay) != [(fd, select.POLLOUT)]: raise RuntimeError(
           'Waiting to write to PRU 1 on the RPMsg device was unsuccessful.')
-    else:  # Otherwise flush the write and advance the write index.
-      device.flush()
+    else:  # Otherwise advance the write index.
       all_written += written
 
 
@@ -435,8 +445,23 @@ def rpmsg_write(rpmsg, data, delay=5.0):
 ################################
 
 
+class Image(NamedTuple(
+    'Image', [('image_file', BinaryIO),
+              ('mapped', mmap.mmap)])):
+  """I/O-related objects for memory-mapped disk image files.
+
+  Use `image_mmap` to initialise/prepare this data structure.
+
+  Fields:
+    image_file: A read-write handle for the disk image file. Don't modify the
+        disk image file with this object; in fact, you probably shouldn't use
+        it for anything.
+    mapped: A writeable mmap object for the file's entire contents.
+  """
+
+
 @contextlib.contextmanager
-def image_mmap(path, create):
+def image_mmap(path: str, create: bool) -> Generator[Image, None, None]:
   """mmap (after optionally creating) the disk image file.
 
   A context manager that opens and mmaps the disk image file, optionally
@@ -450,11 +475,7 @@ def image_mmap(path, create):
         there must not be a file at `path`.
 
   Yields:
-    A 2-tuple with these elements:
-        [0]: an 'rb+' file object for the disk image file. Do not modify the
-             disk image file with this object; in fact, you probably shouldn't
-             use it for anything.
-        [1]: a writeable mmap object for the file's entire contents.
+    An Image object initialised from `path`.
 
   Raises:
     IOError: either this function was told to create an image file that already
@@ -466,9 +487,9 @@ def image_mmap(path, create):
     if os.path.isfile(path): raise IOError(
         "File {} already exists; won't overwrite it with a new disk "
         'image.'.format(path))
-    with open(path, 'w') as f:
-      for s in xrange(IMAGE_SIZE // SECTOR_SIZE):
-        f.write('\x00' * SECTOR_SIZE)
+    with open(path, 'wb') as f:
+      for s in range(IMAGE_SIZE // SECTOR_SIZE):
+        f.write(b'\x00' * SECTOR_SIZE)
       f.flush()
 
   # Check that the image file is the correct size.
@@ -479,16 +500,16 @@ def image_mmap(path, create):
 
   # Open and mmap the file to allow reads and writes. Yield the file object
   # and the memory. When the caller is done with it, aggressively save.
-  with open(path, 'rb+') as f:
-    mem = mmap.mmap(f.fileno(), length=IMAGE_SIZE, access=mmap.ACCESS_WRITE)
-    yield (f, mem)
+  with open(path, 'rb+') as bf:
+    mem = mmap.mmap(bf.fileno(), length=IMAGE_SIZE, access=mmap.ACCESS_WRITE)
+    yield Image(bf, mem)
     mem.flush()
     mem.close()
     logging.info('Final disk image data flush complete. '
                  'Disk image file closed.')
 
 
-class ImageFlusher(object):
+class ImageFlusher:
   """Background disk-syncing for mmap'd disk images.
 
   This context manager manages a thread that forces changes to a mmap'd disk
@@ -506,26 +527,25 @@ class ImageFlusher(object):
   (It would be redundant with the sync upon leaving an `image_mmap` context.)
   """
 
-  def __init__(self, image, delay=4.0):
+  def __init__(self, image: Image, delay: float = 4.0) -> None:
     """Initialise an ImageFlusher.
 
     Args:
-      image: A 2-tuple of the kind yielded by `image_mmap`.
+      image: An Image object returned by `image_mmap`.
       delay: Flush no more frequently than this often, in seconds.
     """
     self._image = image
     self._delay = delay
     self._event = threading.Event()  # "Must flush" -OR- "It's time to quit"
     self._cease = threading.Event()  # "It's time to quit"
-    self._thread = None
+    self._thread = None  # type: Optional[threading.Thread]
 
   def dirty(self):
     self._event.set()  # An event ("Time to flush to disk!") has occurred
 
-  def __enter__(self):
+  def __enter__(self) -> 'ImageFlusher':
     """Context manager entry. Create and run the flusher thread."""
 
-    # The dual-Event design makes for a compact implementation of "
     def thread():
       _, mem = self._image
       while True:
@@ -549,34 +569,37 @@ class ImageFlusher(object):
     self._thread.join()
 
 
-def image_get_sector(image, sector):
+def image_get_sector(image: Image, sector: int) -> bytes:
   r"""Retrieve the `sector`th sector from the disk image.
 
   Args:
-    image: A 2-tuple of the kind yielded by `image_mmap`.
+    image: An Image object returned by `image_mmap`.
     sector: Index of the sector to retrieve.
 
   Returns:
-    532 bytes of sector data, or of '\x00' bytes if the sector index is
-        out-of-bounds. There is no failure for out-of-bounds sector indices.
+    532 bytes of sector data, or of b'\x00' bytes if the sector index is
+    out-of-bounds. There is no failure for out-of-bounds sector indices.
   """
-  _, mem = image
-
   start_index = sector * SECTOR_SIZE
   end_index = start_index + SECTOR_SIZE
 
-  if start_index < 0 or end_index > IMAGE_SIZE: return '\x00' * SECTOR_SIZE
-  return mem[start_index:end_index]
+  if start_index < 0 or end_index > IMAGE_SIZE: return b'\x00' * SECTOR_SIZE
+  return image.mapped[start_index:end_index]
 
 
-def image_put_sector(image, sector, data, flusher=None):
+def image_put_sector(
+    image: Image,
+    sector: int,
+    data: bytes,
+    flusher: Optional[ImageFlusher] = None,
+):
   """Store sector data in the `sector`th sector of the disk image.
 
   The modified disk image data is committed to the image file as soon as
   possible.
 
   Args:
-    image: A 2-tuple of the kind yielded by `image_mmap`.
+    image: An Image object returned by `image_mmap`.
     sector: Index of the sector receiving the data. Out-of-bounds sector
         indices are silently ignored with no effect on the disk image.
     data: 532-bytes of sector data to write to the `sector`th sector.
@@ -606,11 +629,11 @@ def image_put_sector(image, sector, data, flusher=None):
 #######################################
 
 
-def aphd_get_sector(rpmsg):
+def aphd_get_sector(rpmsg: Rpmsg) -> bytes:
   """Obtain contents of the Apple buffer from PRU1.
 
   Args:
-    rpmsg: A 3-tuple of the kind created by `rpmsg_io_init`.
+    rpmsg: An Rpmsg object returned by `rpmsg_io_init`.
 
   Returns:
     Contents of the Apple buffer on PRU1.
@@ -621,12 +644,10 @@ def aphd_get_sector(rpmsg):
   # The transfer takes place in two parts, since the RPMsg data buffer is
   # too small to contain data for an entire sector.
   # Part 1: read the first 266 bytes of the buffer.
-  command = struct.pack('<LHH', APHD_COMMAND_GET, 0, 266)
-  rpmsg_write(rpmsg, command)
+  rpmsg_write(rpmsg, APHD_COMMAND_GET_PART_1)
   part_1 = rpmsg_read(rpmsg, 266)
   # Part 2: read the second 266 bytes of the buffer.
-  command = struct.pack('<LHH', APHD_COMMAND_GET, 266, 266)
-  rpmsg_write(rpmsg, command)
+  rpmsg_write(rpmsg, APHD_COMMAND_GET_PART_2)
   part_2 = rpmsg_read(rpmsg, 266)
 
   result = part_1 + part_2
@@ -636,11 +657,11 @@ def aphd_get_sector(rpmsg):
   return result
 
 
-def aphd_put_sector(rpmsg, data):
+def aphd_put_sector(rpmsg: Rpmsg, data: bytes):
   """Store data (with added parity bytes) into the disk buffer on PRU1.
 
   Args:
-    rpmsg: A 3-tuple of the kind created by `rpmsg_io_init`.
+    rpmsg: An Rpmsg object returned by `rpmsg_io_init`.
     data: 532 bytes of data to store.
 
   Raises:
@@ -651,23 +672,22 @@ def aphd_put_sector(rpmsg, data):
       '{} bytes.'.format(len(data), SECTOR_SIZE))
 
   # Compute parity bytes for the data to place in the drive sector.
-  data = ''.join(
-      c + ('\x00' if bin(ord(c)).count('1') % 2 else '\xff') for c in data)
+  data = b''.join(bytes((c, PARITY[c])) for c in data)
 
   # The transfer takes place in three parts, since the RPMsg data buffer is
   # too small to contain data for an entire sector.
   # Part 1: write the first 354 bytes of the sector.
-  command = struct.pack('<LHH', APHD_COMMAND_PUT, 0, 354) + data[:354]
+  command = APHD_COMMAND_PUT_PART_1 + data[:354]
   rpmsg_write(rpmsg, command)
   # Part 2: write the next 354 bytes of the sector.
-  command = struct.pack('<LHH', APHD_COMMAND_PUT, 354, 354) + data[354:708]
+  command = APHD_COMMAND_PUT_PART_2 + data[354:708]
   rpmsg_write(rpmsg, command)
   # Part 3: write the last 356 bytes of the sector.
-  command = struct.pack('<LHH', APHD_COMMAND_PUT, 708, 356) + data[708:]
+  command = APHD_COMMAND_PUT_PART_3 + data[708:]
   rpmsg_write(rpmsg, command)
 
 
-def aphd_goahead(rpmsg):
+def aphd_goahead(rpmsg: Rpmsg):
   """Issue a "go ahead" command to PRU1.
 
   During reads and writes, PRU1 waits for this code to finish reading/writing
@@ -675,14 +695,13 @@ def aphd_goahead(rpmsg):
   completed and PRU1 can resume the operation.
 
   Args:
-    rpmsg: A 3-tuple of the kind created by `rpmsg_io_init`.
+    rpmsg: An Rpmsg object returned by `rpmsg_io_init`.
   """
   # Assemble command structure and dispatch.
-  command = struct.pack('<LHH', APHD_COMMAND_GOAHEAD, 0, 0)
-  rpmsg_write(rpmsg, command)
+  rpmsg_write(rpmsg, APHD_COMMAND_GOAHEAD)
 
 
-def aphd_await_command(rpmsg):
+def aphd_await_command(rpmsg: Rpmsg) -> bytes:
   """Read a ProFile command from the Apple via PRU1.
 
   This wait blocks indefinitely. When a command is finally received, it is
@@ -691,13 +710,16 @@ def aphd_await_command(rpmsg):
   to exchange data between PRU1 and the disk image. See the `profile` function
   for details.
 
+  Args:
+    rpmsg: An Rpmsg object returned by `rpmsg_io_init`.
+
   Returns:
-      The six byte command obtained from the Apple.
+    The six byte command obtained from the Apple.
 
   Raises:
-      RuntimeError: numerous attempts to read the command have failed.
+    RuntimeError: numerous attempts to read the command have failed.
   """
-  for _ in xrange(600):
+  for _ in range(600):
     command = rpmsg_read(rpmsg, 6, delay=-1.0)  # Negative delays last forever.
     if len(command) == 6: return command
   else:
@@ -710,7 +732,12 @@ def aphd_await_command(rpmsg):
 ##########################
 
 
-def profile(image, rpmsg, leds, flusher=None):
+def profile(
+    image: Image,
+    rpmsg: Rpmsg,
+    leds: LEDs,
+    flusher: Optional[ImageFlusher] = None,
+) -> bytes:
   """Emulator core; broker data exchange between the Aphid and the disk image.
 
   Does not return voluntarily. KeyboardInterrupt and select.error exceptions
@@ -718,10 +745,18 @@ def profile(image, rpmsg, leds, flusher=None):
   other exceptions are anomalous.
 
   Args:
-    image: A 2-tuple of the kind yielded by `image_mmap`.
-    rpmsg: A 3-tuple of the kind created by `rpmsg_io_init`.
+    image: An Image object returned by `image_mmap`.
+    rpmsg: An Rpmsg object returned by `rpmsg_io_init`.
     leds: An LEDs object.
     flusher: Optional `ImageFlusher` object initialised with `image`.
+
+  Returns:
+    A sector's worth of data when the Apple has commanded the emulator to end
+    the emulation session. The Apple does this by issuing one of the write
+    commands to sector $FFFFFD with a $FE write count and an $AF sparing
+    threshold (similar but not identical to one of IDEFile's "magic writes").
+    The 532 bytes of sector data associated with that write command are the
+    "conclusion" returned by this function.
 
   Raises:
     KeyboardInterrupt: the emulator main loop has been interrupted by SIGTERM.
@@ -735,15 +770,20 @@ def profile(image, rpmsg, leds, flusher=None):
     caught_sigterm = True
   old_sigterm_handler = signal.signal(signal.SIGTERM, sigterm_handler)
 
+  # If conclusion is set to a non-None value, then this function will return
+  # the PRU to a nominal state (i.e. tell it to resume processing) and then
+  # return this value, concluding the ProFile emulation session.
+  conclusion = None  # type: Optional[bytes]
+
   # A read request for sector $FFFFFE obtains the contents of the ProFile's
   # memory buffer, which presumably is the last sector read from or written to
   # the drive. We keep track of the last sector coming or going so that we
   # can supply the same if requested.
-  last_data = '\x00' * SECTOR_SIZE
+  last_data = bytes(SECTOR_SIZE)
 
   # MAIN LOOP :-)
   logging.info('Cameo/Aphid ProFile emulator ready.')
-  while not caught_sigterm:
+  while conclusion is None and not caught_sigterm:
     # Wait for a command from the Apple. Ignore unless it's six bytes long.
     leds.on()
     command = aphd_await_command(rpmsg)
@@ -755,10 +795,9 @@ def profile(image, rpmsg, leds, flusher=None):
     op, sector_hi, sector_lo, retry_count, sparing_threshold = struct.unpack(
         '>BBHBB', command)
     sector = (sector_hi << 16) + sector_lo
-    del retry_count, sparing_threshold  # Not used, yet.
 
     # For logging.
-    hex_command = binascii.b2a_hex(command)
+    hex_command = command.hex()
 
     # All we need to do is transfer data between PRU1 and the disk image
     # depending on whether we're being told to read or write.
@@ -775,7 +814,13 @@ def profile(image, rpmsg, leds, flusher=None):
     elif op in [PROFILE_WRITE, PROFILE_WRITE_VERIFY, PROFILE_WRITE_FORCE_SPARE]:
       logging.info('[%s] Write sector $%06X', hex_command, sector)
       data = aphd_get_sector(rpmsg)  # Get sector data from PRU1
-      image_put_sector(image, sector, data, flusher)  # Place in the disk image
+
+      if (sector == 0xfffffd and       # Conclude this ProFile session.
+          retry_count == 0xfe and      # (That's 254.) This is opposite of the
+          sparing_threshold == 0xaf):  # (That's 175.) IDEFile "magic numbers".
+        conclusion = data
+      else:                           # Just write this sector normally.
+        image_put_sector(image, sector, data, flusher)  # Stow in the disk image
 
     else:
       logging.warning('[%s] Unrecognised command, ignoring!', hex_command)
@@ -786,10 +831,62 @@ def profile(image, rpmsg, leds, flusher=None):
     # memory buffer contents.
     last_data = data
 
-  # If we're here, we caught SIGTERM. Restore the old handler, then pretend
-  # that we were ctrl-C'd.
+  # Back outside of the main emulation loop. Restore the old SIGTERM handler.
   signal.signal(signal.SIGTERM, old_sigterm_handler)
-  raise KeyboardInterrupt
+  # If we actually caught SIGTERM, re-raise it to pretend we were ctrl-C'd.
+  if caught_sigterm: raise KeyboardInterrupt
+  # Otherwise, return the session conclusion data.
+  return conclusion
+
+
+def process_conclusion(
+    last_image_file: str,
+    conclusion: bytes,
+) -> str:
+  """Process the "conclusion" of an emulator session.
+
+  An emulator session's _conclusion_ is the 532 bytes of sector data that the
+  Apple supplied along with its command to end the emulation session (see the
+  `profile` docstring). The main program uses this helper to parse this
+  conclusion and perform any state changes that might be directed by its
+  contents.
+
+  This function may affect the state of the Cameo/Aphid stack, and it may
+  return values that direct the main function to change that state.
+
+  Args:
+    last_image_file: The filename of the hard drive image file that was used
+        during the prior emulation session.
+    conclusion: Contents of the last emulator session's conclusion (see above).
+
+  Returns:
+    The filename of the hard drive image file that should be used during the
+    next emulation session. Unless the conclusion is well-formed and directs
+    otherwise, this will be the same as `last_image_file`.
+
+  Raises:
+    KeyboardInterrupt: the conclusion instructs Aphid to shut down cleanly.
+  """
+  # Convert the conclusion into a text string. Obeys null termination, ignores
+  # the 532nd byte.
+  command = conclusion[:conclusion.find(0)].decode(errors='ignore')
+  logging.info('Conclusion data: %s', command)
+
+  if command == 'HALT':
+    raise KeyboardInterrupt
+
+  elif command.startswith('IMAGE:'):
+    next_image_path, next_image_file = os.path.split(command[6:])
+    if (next_image_path or                         # Files in cwd only.
+        not next_image_file or                     # Must specify a file.
+        not next_image_file.endswith('.image') or  # Must end in '.image'.
+        not os.path.exists(next_image_file)):      # Must exist.
+      return last_image_file
+    else:
+      return next_image_file
+
+  else:
+    return last_image_file
 
 
 ######################
@@ -797,9 +894,15 @@ def profile(image, rpmsg, leds, flusher=None):
 ######################
 
 
-def main(FLAGS):
+def main(FLAGS: argparse.Namespace):
   # Verbose logging if desired.
   if FLAGS.verbose: logging.getLogger().setLevel(logging.INFO)
+
+  # We'll read/write to this image file.
+  image_file = FLAGS.image_file
+
+  # This will store the error that kills us.
+  terminating_error = None  # type: Optional[BaseException]
 
   # Open the all-important LEDs.
   with LEDs() as leds:
@@ -812,17 +915,29 @@ def main(FLAGS):
       if not FLAGS.skip_pru_restart: boot_pru_firmware(FLAGS.device)
 
     # Open the PRU RPMsg device file.
-    with open(FLAGS.device, 'rb+') as device:
+    fd = None  # type: Optional[int]
+    try:
+      fd = os.open(FLAGS.device, os.O_RDWR | os.O_DSYNC)
       # Initialise low-level I/O for RPMsg.
-      rpmsg = rpmsg_io_init(device)
-      # Open disk image and commence ProFile emulation.
-      with image_mmap(FLAGS.image_file, FLAGS.create) as image:
-        with ImageFlusher(image) as flusher:
-          try:
-            profile(image, rpmsg, leds, flusher)
-          except (Exception, KeyboardInterrupt) as error:
-            # Interrupted. image_mmap will save and flush the image.
-            logging.info('Shutting down cleanly...')
+      rpmsg = rpmsg_io_init(fd)
+
+      # Run back-to-back ProFile emulation sessions until there's an error.
+      try:
+        while True:
+          # Open disk image and commence a ProFile emulation session.
+          logging.info('Starting emulation with image file %s...', image_file)
+          with image_mmap(image_file, FLAGS.create) as image:
+            with ImageFlusher(image) as flusher:
+              conclusion = profile(image, rpmsg, leds, flusher)
+          # Process the session's "conclusion" before starting a new session.
+          logging.info('Emulation session ended. Processing conclusion...')
+          image_file = process_conclusion(image_file, conclusion)
+      except (Exception, KeyboardInterrupt) as error:
+        # Interrupted. image_mmap will have saved and flushed the image.
+        terminating_error = error
+
+    finally:
+      if fd is not None: os.close(fd)
 
     # Just in case we didn't reinstall the signal handler in profile().
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
@@ -831,10 +946,10 @@ def main(FLAGS):
     # flash the LEDs so that in "headless" installations it's clearer when the
     # PocketBeagle has finally shut itself down.
     logging.info('Clean shutdown complete. (Ctrl-C again to exit.)')
-    if isinstance(error, (KeyboardInterrupt, select.error)):
+    if isinstance(terminating_error, (KeyboardInterrupt, select.error)):
       leds.cycle_forever()  # An intentional shutdown: blink a rolling pattern.
     else:
-      logging.error('Anomalous exception: %s', error)
+      logging.error('Anomalous exception: %s', terminating_error)
       leds.blink_forever()  # An unintentional shutdown: blink slowly.
 
 
