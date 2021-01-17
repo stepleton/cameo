@@ -1,0 +1,3 @@
+[submodule "aphid/selector/lisa_io"]
+	path = aphid/selector/lisa_io
+	url = https://github.com/stepleton/lisa_io.git

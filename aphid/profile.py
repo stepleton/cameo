@@ -9,6 +9,9 @@ program's process space.
 
 Run with the --help flag for usage information.
 
+Includes a plugin system that allows some blocks to be "magical". See the
+file header comment in `profile_plugins.py` for details.
+
 Most installations of the emulator will run in "headless" mode (i.e. without
 any console for displaying log messages), so this program displays some basic
 status information on the user LEDs. Light patterns and their meanings include:
@@ -42,7 +45,9 @@ import sys
 import threading
 import time
 
-from typing import BinaryIO, Generator, Iterator, Optional, Tuple, NamedTuple
+from typing import BinaryIO, Dict, Generator, Iterator, Optional, Tuple, NamedTuple
+
+import profile_plugins
 
 
 ###################
@@ -55,17 +60,18 @@ IMAGE_SIZE = 5175296  # Hard drive image size in bytes.
 SECTOR_SIZE = 532  # Sector size in bytes. Note "block size" in SPARE_TABLE.
 
 SPARE_TABLE = (  # The sector $FFFFFF spare table for a healthy 5MB ProFile.
-    b'PROFILE      '  # Device name. This indicates a 5MB ProFile.
-    b'\x00\x00\x00'   # Device number. Also means "5MB ProFile".
-    b'\x03\x98'       # Firmware revision $0398. (Latest sold?)
-    b'\x00\x26\x00'   # Blocks available. 9,728 blocks.
-    b'\x02\x14'       # Block size. 532 bytes.
-    b'\x20'           # Spare blocks on device. 20 blocks.
-    b'\x00'           # Spare blocks allocated. 0 blocks.
-    b'\x00'           # Bad blocks allocated. 0 blocks.
-    b'\xff\xff\xff'   # End of the list of (zero) spare blocks.
-    b'\xff\xff\xff'   # End of the list of (zero) bad blocks.
-) + bytes(532 - 32)
+    b'PROFILE      '     # Device name. This indicates a 5MB ProFile.
+    b'\x00\x00\x00'      # Device number. Also means "5MB ProFile".
+    b'\x03\x98'          # Firmware revision $0398. (Latest sold?)
+    b'\x00\x26\x00'      # Blocks available. 9,728 blocks.
+    b'\x02\x14'          # Block size. 532 bytes.
+    b'\x20'              # Spare blocks on device. 32 blocks.
+    b'\x00'              # Spare blocks allocated. 0 blocks.
+    b'\x00'              # Bad blocks allocated. 0 blocks.
+    b'\xff\xff\xff'      # End of the list of (no) spare blocks.
+    b'\xff\xff\xff'      # End of the list of (no) bad blocks. Spare table ends.
+    b'Cameo/Aphid 0001'  # Secret Cameo/Aphid device ID and protocol version :-)
+) + bytes(532 - 32 - 16)
 
 # For the beginning of command messages that tell the Aphid PRU1 firmware to
 # execute various operations, we use statistically-unusual sequences of bytes.
@@ -81,6 +87,8 @@ PROFILE_READ = 0x00
 PROFILE_WRITE = 0x01
 PROFILE_WRITE_VERIFY = 0x02
 PROFILE_WRITE_FORCE_SPARE = 0x03
+ALL_PROFILE_WRITE_COMMANDS = (
+    PROFILE_WRITE, PROFILE_WRITE_VERIFY, PROFILE_WRITE_FORCE_SPARE)
 
 # Paths to the filesystem objects that allow us to configure the pinmux.
 OCP_PREFIX = '/sys/devices/platform/ocp/'
@@ -211,11 +219,12 @@ class LEDs:
     thread.daemon = True
     thread.start()
 
-    yield  # Back to the caller.
-
-    # We're back. Stop the cycling now.
-    self._cycling_now = False
-    thread.join()
+    try:
+      yield  # Back to the caller.
+    finally:
+      # We're back. Stop the cycling now.
+      self._cycling_now = False
+      thread.join()
 
 
 #####################################################
@@ -271,8 +280,8 @@ def boot_pru_firmware(device):
       with open([PRU0_STATE_PATH, PRU1_STATE_PATH][i], 'w') as f:
         f.write('stop\n')
     except IOError:
-      logging.info("Couldn't stop PRU {}; maybe it's not running. "
-                   'Carrying on...'.format(i))
+      logging.info("Couldn't stop PRU %d; maybe it's not running. "
+                   'Carrying on...', i)
 
   # Indicate which firmware we'd like to run the PRU.
   logging.info('Pointing remoteproc at the Aphid PRU firmware...')
@@ -489,7 +498,7 @@ def image_mmap(path: str, create: bool) -> Generator[Image, None, None]:
         'image.'.format(path))
     with open(path, 'wb') as f:
       for s in range(IMAGE_SIZE // SECTOR_SIZE):
-        f.write(b'\x00' * SECTOR_SIZE)
+        f.write(bytes(SECTOR_SIZE))
       f.flush()
 
   # Check that the image file is the correct size.
@@ -502,11 +511,13 @@ def image_mmap(path: str, create: bool) -> Generator[Image, None, None]:
   # and the memory. When the caller is done with it, aggressively save.
   with open(path, 'rb+') as bf:
     mem = mmap.mmap(bf.fileno(), length=IMAGE_SIZE, access=mmap.ACCESS_WRITE)
-    yield Image(bf, mem)
-    mem.flush()
-    mem.close()
-    logging.info('Final disk image data flush complete. '
-                 'Disk image file closed.')
+    try:
+      yield Image(bf, mem)
+    finally:
+      mem.flush()
+      mem.close()
+      logging.info('Final disk image data flush complete. '
+                   'Disk image file closed.')
 
 
 class ImageFlusher:
@@ -583,7 +594,7 @@ def image_get_sector(image: Image, sector: int) -> bytes:
   start_index = sector * SECTOR_SIZE
   end_index = start_index + SECTOR_SIZE
 
-  if start_index < 0 or end_index > IMAGE_SIZE: return b'\x00' * SECTOR_SIZE
+  if start_index < 0 or end_index > IMAGE_SIZE: return bytes(SECTOR_SIZE)
   return image.mapped[start_index:end_index]
 
 
@@ -736,6 +747,7 @@ def profile(
     image: Image,
     rpmsg: Rpmsg,
     leds: LEDs,
+    plugins: Optional[Dict[int, profile_plugins.Plugin]] = None,
     flusher: Optional[ImageFlusher] = None,
 ) -> bytes:
   """Emulator core; broker data exchange between the Aphid and the disk image.
@@ -761,81 +773,93 @@ def profile(
   Raises:
     KeyboardInterrupt: the emulator main loop has been interrupted by SIGTERM.
         A bit of a strange way to represent this event, but it should be
-        handled the same way.
+        handled the same way as a user's Ctrl-C.
   """
-  # Set up signal handler that stops the main loop on SIGTERM, allowing us
-  # to shut down cleanly.
-  caught_sigterm = False
+  # Set up signal handler that raises a KeyboardInterrupt on SIGTERM, allowing
+  # us to shut down cleanly.
   def sigterm_handler(signal, frame):
-    caught_sigterm = True
+    raise KeyboardInterrupt
   old_sigterm_handler = signal.signal(signal.SIGTERM, sigterm_handler)
 
-  # If conclusion is set to a non-None value, then this function will return
-  # the PRU to a nominal state (i.e. tell it to resume processing) and then
-  # return this value, concluding the ProFile emulation session.
-  conclusion = None  # type: Optional[bytes]
+  # Everything now takes place in a try: block so that we can restore the old
+  # signal handler in a finally: before we exit this function.
+  try:
 
-  # A read request for sector $FFFFFE obtains the contents of the ProFile's
-  # memory buffer, which presumably is the last sector read from or written to
-  # the drive. We keep track of the last sector coming or going so that we
-  # can supply the same if requested.
-  last_data = bytes(SECTOR_SIZE)
+    # If conclusion is set to a non-None value, then this function will return
+    # the PRU to a nominal state (i.e. tell it to resume processing) and then
+    # return this value, concluding the ProFile emulation session.
+    conclusion = None  # type: Optional[bytes]
 
-  # MAIN LOOP :-)
-  logging.info('Cameo/Aphid ProFile emulator ready.')
-  while conclusion is None and not caught_sigterm:
-    # Wait for a command from the Apple. Ignore unless it's six bytes long.
-    leds.on()
-    command = aphd_await_command(rpmsg)
-    leds.off()
-    if len(command) != 6: continue
+    # A read request for sector $FFFFFE obtains the contents of the ProFile's
+    # memory buffer, which presumably is the last sector read from or written to
+    # the drive. We keep track of the last sector coming or going so that we
+    # can supply the same if requested.
+    last_data = bytes(SECTOR_SIZE)
 
-    # Decode the command. Awkwardly, struct does not support unpacking
-    # three-byte quantities like the sector identifier.
-    op, sector_hi, sector_lo, retry_count, sparing_threshold = struct.unpack(
-        '>BBHBB', command)
-    sector = (sector_hi << 16) + sector_lo
+    # If the caller supplied no plugins, swap in an empty plugin dict.
+    if plugins is None: plugins = {}
 
-    # For logging.
-    hex_command = command.hex()
+    # MAIN LOOP :-)
+    logging.info('Cameo/Aphid ProFile emulator ready.')
+    while conclusion is None:
+      # Wait for a command from the Apple. Ignore unless it's six bytes long.
+      leds.on()
+      command = aphd_await_command(rpmsg)
+      leds.off()
+      if len(command) != 6: continue
 
-    # All we need to do is transfer data between PRU1 and the disk image
-    # depending on whether we're being told to read or write.
-    if op == PROFILE_READ:
-      logging.info('[%s]  Read sector $%06X', hex_command, sector)
-      if sector == 0xffffff:    # Get the spare table
-        data = SPARE_TABLE
-      elif sector == 0xfffffe:  # Get the last data read or written
-        data = last_data
-      else:                     # Get a sector from the disk image
-        data = image_get_sector(image, sector)
-      aphd_put_sector(rpmsg, data)  # Send to PRU1
+      # Decode the command. Awkwardly, struct does not support unpacking
+      # three-byte quantities like the sector identifier.
+      op, sector_hi, sector_lo, retry_count, sparing_thresh = struct.unpack(
+          '>BBHBB', command)
+      sector = (sector_hi << 16) + sector_lo
 
-    elif op in [PROFILE_WRITE, PROFILE_WRITE_VERIFY, PROFILE_WRITE_FORCE_SPARE]:
-      logging.info('[%s] Write sector $%06X', hex_command, sector)
-      data = aphd_get_sector(rpmsg)  # Get sector data from PRU1
+      # For logging.
+      hex_command = command.hex()
 
-      if (sector == 0xfffffd and       # Conclude this ProFile session.
-          retry_count == 0xfe and      # (That's 254.) This is opposite of the
-          sparing_threshold == 0xaf):  # (That's 175.) IDEFile "magic numbers".
-        conclusion = data
-      else:                           # Just write this sector normally.
-        image_put_sector(image, sector, data, flusher)  # Stow in the disk image
+      # All we need to do is transfer data between PRU1 and the disk image
+      # depending on whether we're being told to read or write.
+      if op == PROFILE_READ:
+        logging.info('[%s]  Read sector $%06X', hex_command, sector)
+        if sector == 0xffffff:    # Get the spare table
+          data = SPARE_TABLE
+        elif sector == 0xfffffe:  # Get the last data read or written
+          data = last_data
+        elif 0xff0000 <= sector < 0xffff00 and sector in plugins:  # Plugin call
+          data = plugins[sector](op, sector, retry_count, sparing_thresh, None)
+          if len(data) != SECTOR_SIZE:                     # Enforce proper size
+            data = data[:SECTOR_SIZE] + bytes(max(0, SECTOR_SIZE - len(data)))
+        else:                     # Get a sector from the disk image
+          data = image_get_sector(image, sector)
+        aphd_put_sector(rpmsg, data)  # Send to PRU1
 
-    else:
-      logging.warning('[%s] Unrecognised command, ignoring!', hex_command)
+      elif op in ALL_PROFILE_WRITE_COMMANDS:
+        logging.info('[%s] Write sector $%06X', hex_command, sector)
+        data = aphd_get_sector(rpmsg)  # Get sector data from PRU1
 
-    # Tell the PRU to resume its processing.
-    aphd_goahead(rpmsg)
-    # Keep the last data read or written handy in case the Apple requests the
-    # memory buffer contents.
-    last_data = data
+        if (sector == 0xfffffd and    # Conclude this ProFile session
+            retry_count == 0xfe and   # (That's 254.) This is opposite of the
+            sparing_thresh == 0xaf):  # (That's 175.) IDEFile "magic numbers"
+          conclusion = data
+        elif 0xff0000 <= sector < 0xffff00 and sector in plugins:  # Plugin call
+          _ = plugins[sector](op, sector, retry_count, sparing_thresh, data)
+        else:                            # Just write this sector normally
+          image_put_sector(image, sector, data, flusher)  # Stow in the disk img
 
-  # Back outside of the main emulation loop. Restore the old SIGTERM handler.
-  signal.signal(signal.SIGTERM, old_sigterm_handler)
-  # If we actually caught SIGTERM, re-raise it to pretend we were ctrl-C'd.
-  if caught_sigterm: raise KeyboardInterrupt
-  # Otherwise, return the session conclusion data.
+      else:
+        logging.warning('[%s] Unrecognised command, ignoring!', hex_command)
+
+      # Tell the PRU to resume its processing.
+      aphd_goahead(rpmsg)
+      # Keep the last data read or written handy in case the Apple requests the
+      # memory buffer contents.
+      last_data = data
+
+  # We're no longer in the main emulation loop. Restore the old SIGTERM handler.
+  finally:
+    signal.signal(signal.SIGTERM, old_sigterm_handler)
+
+  # Assuming we exited without an exception, return the session conclusion data.
   return conclusion
 
 
@@ -869,7 +893,8 @@ def process_conclusion(
   """
   # Convert the conclusion into a text string. Obeys null termination, ignores
   # the 532nd byte.
-  command = conclusion[:conclusion.find(0)].decode(errors='ignore')
+  command = conclusion[:conclusion.find(0)].decode(
+      'raw_unicode_escape', errors='ignore')
   logging.info('Conclusion data: %s', command)
 
   if command == 'HALT':
@@ -924,11 +949,13 @@ def main(FLAGS: argparse.Namespace):
       # Run back-to-back ProFile emulation sessions until there's an error.
       try:
         while True:
-          # Open disk image and commence a ProFile emulation session.
-          logging.info('Starting emulation with image file %s...', image_file)
-          with image_mmap(image_file, FLAGS.create) as image:
-            with ImageFlusher(image) as flusher:
-              conclusion = profile(image, rpmsg, leds, flusher)
+          # Load plugins, open disk image, commence a ProFile emulation session.
+          logging.info('Loading "magic block" plugins...')
+          with profile_plugins.plugins() as plugins:
+            logging.info('Starting emulation with image file %s...', image_file)
+            with image_mmap(image_file, FLAGS.create) as image:
+              with ImageFlusher(image) as flusher:
+                conclusion = profile(image, rpmsg, leds, plugins, flusher)
           # Process the session's "conclusion" before starting a new session.
           logging.info('Emulation session ended. Processing conclusion...')
           image_file = process_conclusion(image_file, conclusion)
@@ -947,10 +974,10 @@ def main(FLAGS: argparse.Namespace):
     # PocketBeagle has finally shut itself down.
     logging.info('Clean shutdown complete. (Ctrl-C again to exit.)')
     if isinstance(terminating_error, (KeyboardInterrupt, select.error)):
-      leds.cycle_forever()  # An intentional shutdown: blink a rolling pattern.
+      leds.cycle_forever()  # An intentional shutdown: blink a rolling pattern
     else:
       logging.error('Anomalous exception: %s', terminating_error)
-      leds.blink_forever()  # An unintentional shutdown: blink slowly.
+      leds.blink_forever()  # An unintentional shutdown: blink slowly
 
 
 if __name__ == '__main__':
