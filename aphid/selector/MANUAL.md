@@ -355,7 +355,7 @@ The Moniker command presents this interface:
 
  { Change moniker }
 
- Moniker: [               ]
+ Moniker: [No Name        ]
 
  Return (↵) to proceed, Clear (⌧) to cancel.
 
@@ -380,12 +380,12 @@ the fields in the Key/value command's interface:
 
  1: 000-03F [Here are the 512 bytes of data that are associated with the key ]
  2: 040-07F ["Some arbitrary key  " in the Cameo/Aphid key/value store. The d]
- 3: 080-0BF [ark rectangles represent $00 bytes.▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮]
- 4: 0C0-0FF [▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮]
- 5: 100-13F [▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮]
- 6: 140-17F [▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮]
- 7: 180-1BF [▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮]
- 8: 1C0-1FF [▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮]
+ 3: 080-0BF [ark rectangles represent $00 bytes.█████████████████████████████]
+ 4: 0C0-0FF [████████████████████████████████████████████████████████████████]
+ 5: 100-13F [████████████████████████████████████████████████████████████████]
+ 6: 140-17F [████████████████████████████████████████████████████████████████]
+ 7: 180-1BF [████████████████████████████████████████████████████████████████]
+ 8: 1C0-1FF [████████████████████████████████████████████████████████████████]
 
 ```
 The editor requests the key and cache key for the entry you wish to edit
@@ -681,7 +681,7 @@ to do something similar.
 It would not have been possible for me to create the Cameo/Aphid hard drive
 image selector without the help of the following people and resources:
 
-* [Dr. Patrick Schäfer](http://john.ccac.rwth-aachen.de:8000/patrick/index.htm),
+- [Dr. Patrick Schäfer](http://john.ccac.rwth-aachen.de:8000/patrick/index.htm),
   whose [UsbWidEx](http://john.ccac.rwth-aachen.de:8000/patrick/UsbWidEx.htm)
   device was invaluable to early development of the Cameo/Aphid plugin system.
 - [bitsavers.org](http://bitsavers.org)'s archived technical documentation.
@@ -692,7 +692,7 @@ image selector without the help of the following people and resources:
   emulator.
 - The [BLU](http://sigmasevensystems.com/BLU.html) utility by James MacPhail
   and Ray Arachelian.
-* The entire [LisaList2](https://lisalist2.com/) community.
+- The entire [LisaList2](https://lisalist2.com/) community.
 
 
 ## Revision history
