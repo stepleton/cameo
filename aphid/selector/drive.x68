@@ -300,16 +300,22 @@ UpdateDrive:
     ;   (none)
     ; Notes:
     ;   Attempts to set the current parallel port to the one identified by the
-    ;       boot drive ID that the Boot ROM stores at location $1B3
-    ;   Of course this drive might not be a hard drive at all, which leads to
+    ;       boot device ID that the Boot ROM stores at location $1B3
+    ;   Of course this device might not be a hard drive at all, which leads to
     ;       a rather boring failure and no current parallel port
+    ;   Device IDs of $00 are interpreted as $02 on Lisa 2/10 systems (where the
+    ;       boot ROM appears to use these IDs interchangeably, but prefers $00)
     ;   Z will be set if and only if the boot drive is a Cameo/Aphid
     ;   (I wish I could think of a better name for this routine)
     ;   Trashes D0-D2,A0-A2 and the zBlock disk block buffer; changes zDrives;
     ;       changes zCurrentDrive
 HelloBootDrive:
     MOVE.B  $1B3,D0                ; Copy the ROM's saved boot device ID to D0
-    LEA.L   zCurrentDrive(PC),A0   ; Point A0 at zCurrentDrive
+    BNE.S   .cd                    ; If it wasn't $00, jump to save it in RAM
+    CMPI.B  #$03,$2AF              ; Does the ROM say that we're on a Lisa 2/10?
+    BNE.S   .rt                    ; No, jump ahead to fail
+    MOVEQ.L #$02,D0                ; Yes, but let's use device ID $02 instead
+.cd LEA.L   zCurrentDrive(PC),A0   ; Point A0 at zCurrentDrive
     MOVE.B  D0,(A0)                ; Stash the boot device there
 
     LEA.L   zDrives(PC),A0         ; Point A0 at the drive catalogue
