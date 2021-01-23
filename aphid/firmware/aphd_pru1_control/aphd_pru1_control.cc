@@ -333,12 +333,13 @@ void state_machine_idle() {
                                  if (kDebug) SHMEM.control_debug_word = 0x0101;
   if (SendBytesWithParity(&SHMEM.bytes_with_parity[1], 1U)) return;
 
-  // State 2: Await \PCMD high and PR/\W low.
+  // State 2: Await \PCMD high; when it is, PR/\W must already be low.
   //          Attempt to snoop $55 handshake byte from the bus.
                                  if (kDebug) SHMEM.control_debug_word = 0x0200;
-  for (t = 0U; (__R31 & ((1U << ppCMD) | (1U << ppRW))) != (1U << ppCMD); ++t) {
+  for (t = 0U; (__R31 & (1U << ppCMD)) == 0; ++t) {
     if (t > kTimeout) return;  // Abandon handshake after a while.
   }
+  if ((__R31 & (1U << ppRW)) != 0) return;  // Abandon handshake if PR/\W high.
   SHMEM.apple_handshake[0] = static_cast<uint8_t>(*GPIO_DATAIN >> 14);
 
   // State 3: Raise \PBSY.
