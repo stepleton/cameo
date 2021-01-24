@@ -23,16 +23,16 @@ automatically select and boot from one of the images.
   - [A working keyboard is needed for interactive use](#a-working-keyboard-is-needed-for-interactive-use)
   - [Accessibility](#accessibility)
 * [Main interactive interface and menu options](#main-interactive-interface-and-menu-options)
-  - [B(oot](#boot)
+  - [B(oot and S(elect](#boot-and-select)
   - [N(ew](#new)
   - [C(opy](#copy)
   - [R(ename](#rename)
   - [D(elete](#delete)
-  - [Q(uit](#quit)
   - [A(utoboot toggle](#autoboot-toggle)
   - [M(oniker](#moniker)
   - [K(ey/value](#keyvalue)
-  - [S(witch port](#switch-port)
+  - [P(ort](#port)
+  - [Q(uit](#quit)
 * [Autobooting](#autobooting)
 * [Scripting](#scripting)
 * [Potential improvements](#potential-improvements)
@@ -84,7 +84,7 @@ like this:
 
 ```
 
- [No Name] Command: B(oot, N(ew, C(opy, R(ename, D(elete, Q(uit, ? [0.5]
+ [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.6]
 
   Filename                                                    1,234,567,890 bytes free
  --------------------------------------------------------------------------------------
@@ -129,11 +129,11 @@ keypad to move the selection up and down respectively.
 
 The top of the screen shows a partial menu of keyboard commands:
 ```
- [No Name] Command: B(oot, N(ew, C(opy, R(ename, D(elete, Q(uit, ? [0.5]
+ [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.6]
 ```
 The bracket `(` indicates that the first letter of the command activates the
 command, thus the `C` key will start the Copy command. Also shown here are the
-version number of the Selector software (the `0.5` in square brackets at right)
+version number of the Selector software (the `0.6` in square brackets at right)
 and the "moniker" for this Cameo/Aphid (the `No Name` in square brackets at
 left). A moniker is a name given to a Cameo/Aphid for identification purposes:
 more precisely, it's a name given to a microSD card containing an installation
@@ -144,7 +144,7 @@ the cards will move with them.
 Typing a `?` will change this top line to show an additional menu of keyboard
 commands:
 ```
- [No Name] Command: A(utoboot toggle, M(oniker, K(ey/value, S(witch port
+ [No Name] Command: A(utoboot toggle, M(oniker, K(ey/value, P(ort, Q(uit
 ```
 Typing `?` toggles between displaying both partial menus, so typing it again
 here will result in the display of the first menu. Although only some of the
@@ -173,11 +173,11 @@ demonstrate that the Cameo/Aphid is operating and responsive.
 
 The rest of this section describes all of the keyboard commands.
 
-### B(oot
+### B(oot and S(elect
 
-The **Boot** command causes the Cameo/Aphid to switch its current hard drive
-image to the one selected in the catalogue display, then to attempt to boot the
-Lisa from that hard drive image.
+The **Select** command causes the Cameo/Aphid to switch its current hard drive
+image to the one selected in the catalogue display. The **Boot** command does
+the same, then attempts to boot the Lisa from that hard drive image.
 
 When the Cameo/Aphid switches to a different hard drive image, this means that
 all reads and writes to the emulated hard drive will access data from the
@@ -306,11 +306,6 @@ emulator used by default when it is powered on. (Usually this drive image
 contains the Selector itself.) Browse the drive image catalogue to be certain
 that the hard drive image has been deleted.
 
-### Q(uit
-
-The **Quit** command causes the Selector program to terminate and return control
-of the computer to the Apple Lisa boot ROM.
-
 ### A(utoboot toggle
 
 The **Autoboot toggle** command lets you enable, disable, or configure the
@@ -389,7 +384,7 @@ the fields in the Key/value command's interface:
 
 ```
 The editor requests the key and cache key for the entry you wish to edit
-before it loads and presents the value data for entry in the rows numbered
+before it reads and presents the value data for the entry in the rows numbered
 1 through 8. Editing capabilities are rudimentary, with each row allowing you
 to modify 64-byte segments of the value data in a conventional way.
 
@@ -403,10 +398,10 @@ The Selector keeps configuration information under certain keys in the key/value
 store. Most of this information must be accompanied by a valid checksum word in
 order for the Selector to consider the data valid.
 
-### S(witch port
+### P(ort
 
-The **Switch port** command changes the parallel port in use by the Selector.
-By changing parallel ports, you can use the Selector to control multiple
+The **Port** command changes the parallel port in use by the Selector. By
+changing parallel ports, you can use the Selector to control multiple
 Cameo/Aphid devices connected to the same computer. This command presents this
 interface:
 ```
@@ -431,10 +426,15 @@ Selecting a parallel port from the menu will return you to the main interactive
 interface, with the drive image catalogue showing drive image files on the
 Cameo/Aphid device connected to that port.
 
-The Selector automatically executes the Switch port command immediately after
-start-up if it is loaded from a device that isn't a Cameo/Aphid. The appearance
-of its on-screen display has cosmetic differences to the example shown above in
-this situation.
+The Selector automatically executes the Port command immediately after start-up
+if it is loaded from a device that isn't a Cameo/Aphid. The appearance of its
+on-screen display has cosmetic differences to the example shown above in this
+situation.
+
+### Q(uit
+
+The **Quit** command causes the Selector program to terminate and return control
+of the computer to the Apple Lisa boot ROM.
 
 
 ## Autobooting
@@ -452,7 +452,7 @@ screen prior to booting from the designated hard drive image:
 ```
 
  [Cameo/Aphid]
- Hard drive image manager v0.5
+ Hard drive image manager v0.6
  Connecting to the boot drive: the built-in parallel port... OK
  Loading configuration into the key/value cache... OK
  Reading configuration... OK
@@ -490,12 +490,12 @@ would look like this:
 ```
 ClogImag0Akazoo.image_BootHalt
 ```
-This script contains four commands: **Clog**, which means "update the drive
-image catalogue"; **Imag**, meaning "switch to the following hard drive image";
-**Boot**, "boot from the hard drive image"; and **Halt**, marking the end of
-the script. The terse "scripting language" is designed more for the Selector's
-convenience and not the user's, but it is at least possible to use the
-[key/value editor](#keyvalue) to make more elaborate custom scripts.
+This script contains four commands: `Clog`, which means "update the drive image
+catalogue"; `Imag`, meaning "switch to the following hard drive image"; `Boot`,
+"boot from the hard drive image"; and `Halt`, marking the end of the script.
+The terse "scripting language" is designed more for the Selector's convenience
+than the user's, but it is at least possible to use the [key/value editor](
+#keyvalue) to make more elaborate custom scripts.
 
 Scripts are made of sequences of commands and their arguments. There is no
 flow control, and any command that fails will cause the script to terminate.
@@ -521,11 +521,14 @@ writing.**
 
 * `Name`: followed by a 2-digit hexadecimal number (e.g. `0C` for 12) and then
   a string argument of that many characters _plus one_ (e.g. `ThirteenChars`).
+  If the string argument has an odd number of characters, you must follow it
+  with a meaningless padding byte, e.g. `^`. (Complete example:
+  `ThirteenChars^`)
 
-  Searches the drive image catalogue for a Cameo/Aphid device whose moniker is
-  the same as the string argument, which means the drive image catalogue must be
-  up-to-date (see the `Scan` command). If found, make that device's parallel
-  port the Selector's current parallel port.
+  Search the drive image catalogue for a Cameo/Aphid device whose moniker is the
+  same as the string argument, which means the drive image catalogue must be
+  up-to-date (see the `Scan` command). If one is found, make that device's
+  parallel port the Selector's current parallel port.
 
 * `Home`: Make the parallel port hosting the Cameo/Aphid that was used for
   booting the Lisa the current parallel port. Will fail if the boot device was
@@ -552,7 +555,7 @@ writing.**
   Tell the Cameo/Aphid device on the current parallel port to switch the current
   hard drive image to the specified file. Fails if the specified image doesn't
   exist in the catalogue, which means the catalogue must be up-to-date (see the
-  `Clog` command). Use the `Ima!` command if you'd like to skip the  catalogue
+  `Clog` command). Use the `Ima!` command if you'd like to skip the catalogue
   check.
 
 * `Ima!`: Same as the `Imag` command, except it doesn't check whether the
@@ -562,12 +565,12 @@ writing.**
   a string argument of that many characters _plus one_ (e.g. `Hello world!`).
   If the string argument has an odd number of characters, you must follow it
   with a meaningless padding byte, e.g. `+`. (Complete example:
-  `Prnt0BHello World!`)
+  `Prnt0CHello Planet!+`)
 
   Print a string to the display. Does not print additional newlines or any other
   characters besides what you specify.
 
-* `Load`: followed by the characters `01` and then a two-byte cache key (e.g.
+* `Read`: followed by the characters `01` and then a two-byte cache key (e.g.
   `Hi`).
 
   (This is an advanced command that requires a good understanding of the
@@ -575,13 +578,13 @@ writing.**
   used in scripts alongside the `Name` or `Home` commands, some caution about
   which Cameo/Aphid the Selector is communicating with.)
 
-  Load a script from the cache of the key/value store in the Cameo/Aphid device
+  Read a script from the cache of the key/value store in the Cameo/Aphid device
   on the current parallel port, then run it. Scripts are up to 510 bytes long
   (you don't have to use all that space) followed by a two-byte checksum word
   (see the [key/value editor](#keyvalue) editor documentation for more
   information about checksums).
 
-  In order for the `Load` command to load a script by its two-byte cache key,
+  In order for the `Read` command to read a script by its two-byte cache key,
   the script must already be resident in the cache of the Cameo/Aphid's
   key/value store. Any Cameo/Aphid device that has been detected by the `Scan`
   command is guaranteed to have loaded these key/value store entries into the
@@ -593,7 +596,7 @@ writing.**
   - `Selector: script 02 ` (note trailing space) under cache key `Sc`.
   - `Selector: script 03 ` (note trailing space) under cache key `Sd`.
   - And so on for `03` through `21` and cache keys `Se` through `Sv`
-    respectively, giving 22 scripts accessible to the `Load` command on any
+    respectively, giving 22 scripts accessible to the `Read` command on any
     Cameo/Aphid device.
 
 A more elaborate autoboot script could use several of these commands to prepare
@@ -637,23 +640,15 @@ A floppy disk that boots the Selector will not be readable to common Lisa
 operating systems, and if it remains in the disk drive after one of those
 operating systems boots, it may be possible to format the disk by accident.
 
-#### 3. There should be a way to switch drive images without attempting to boot
+#### 3. It should be possible to copy drive images between two Cameo/Aphids
 
-The only way to direct the Cameo/Aphid to switch drive images interactively is
-to tell the Selector to attempt to boot from a drive image. Some drive images
-won't be appropriate for booting, particularly those used for emulating
-secondary hard drives or "data drives" (e.g. a drive used to host the `/usr`
-directory for a dual-drive Xenix installation).
-
-#### 4. It should be possible to copy drive images between two Cameo/Aphids
-
-#### 5. It should be possible to transfer drive images over the serial port
+#### 4. It should be possible to transfer drive images over the serial port
 
 It's possible that the best place for both of these features is a separate
 computer program. When the Selector boots, the entire Selector program is
 loaded into memory, and bundling in more features mean longer load times.
 
-#### 6. There should be a way to password-protect the interactive interface
+#### 5. There should be a way to password-protect the interactive interface
 
 In public settings, an observer watching the "countdown delay" part of the
 autoboot process may be tempted to interrupt the autoboot and peruse the drive
@@ -662,14 +657,14 @@ challenge prior to entering the main interactive interface could e.g. help
 prevent computer museum guests from disabling interactive exhibits, whether on
 purpose or by accident.
 
-#### 7. There should be a way to run scripts besides the autoboot mechanism
+#### 6. There should be a way to run scripts besides the autoboot mechanism
 
 At present, the only way to run a custom script is to enable the autoboot
 mechanism and then manually edit the autoboot script in the key/value editor.
 Custom scripts may be useful for purposes besides autobooting, and it may be
 useful to be able to invoke a custom script manually.
 
-#### 8. The Selector should be able to install itself onto boot media
+#### 7. The Selector should be able to install itself onto boot media
 
 [The BLU program](http://sigmasevensystems.com/BLU.html) can install itself
 onto hard drives and floppy disks. It may not be so difficult for the Selector
@@ -699,3 +694,5 @@ image selector without the help of the following people and resources:
 
 17 January 2021: Initial release.
 (Tom Stepleton, [stepleton@gmail.com](mailto:stepleton@gmail.com), London)
+
+24 January 2021: 0.6 release, adding the S(elect command. (Tom Stepleton)

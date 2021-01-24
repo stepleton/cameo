@@ -79,13 +79,13 @@ kScrBootHd  EQU  'Boot'
     ; Force an update of the drive image catalogue. No arguments.
 kScrCatUp   EQU  'Clog'
 
-    ; Load a script from the key/value store's cache, and run it. Note that the
+    ; Read a script from the key/value store's cache, and run it. Note that the
     ; script must already be in the cache. Prints nothing; consider using
     ; kScrPrint if needed. Scripts are 510 bytes long (you don't have to use
     ; all that space) followed by a two-byte checksum (as computed by e.g.
     ; BlockCsumCheck); if there is a checksum mismatch, this command fails.
     ; One argument: a two-byte cache key.
-kScrLoad    EQU  'Load'
+kScrRead    EQU  'Read'
  
     ; Search the drive catalogue for a Cameo/Aphid device with the specified
     ; moniker, and make the parallel port associated with that device the
@@ -199,7 +199,7 @@ _CommandTable:
     DC.L    kScrHome
     DC.L    kScrBootHd
     DC.L    kScrCatUp
-    DC.L    kScrLoad
+    DC.L    kScrRead
     DC.L    kScrSelect
     DC.L    kScrImage
     DC.L    kScrImageX
@@ -210,7 +210,7 @@ _CommandOffsets:
     DC.W    (_InterpHome-_CommandOffsets)
     DC.W    (_InterpBootHd-_CommandOffsets)
     DC.W    (_InterpCatUp-_CommandOffsets)
-    DC.W    (_InterpLoad-_CommandOffsets)
+    DC.W    (_InterpRead-_CommandOffsets)
     DC.W    (_InterpSelect-_CommandOffsets)
     DC.W    (_InterpImage-_CommandOffsets)
     DC.W    (_InterpImageX-_CommandOffsets)
@@ -250,7 +250,7 @@ _InterpCatUp:
     RTS
 
 
-_InterpLoad:
+_InterpRead:
     MOVEA.L $4(SP),A0              ; Copy command address to A0
     CMPI.W  #'01',$4(A0)           ; The argument length must be '01'
     BNE.S   .rt                    ; If it isn't, fail
@@ -269,7 +269,7 @@ _InterpLoad:
     ADDQ.L  #$8,SP                 ; Pop args to BlockCsumCheck and Copy
     BNE.S   .rt                    ; Checksum failed? Jump ahead to fail
 
-    LEA.L   zScriptPad(PC),A0      ; Point A0 at the newly-loaded script
+    LEA.L   zScriptPad(PC),A0      ; Point A0 at the newly-read script
     ORI.B   #$04,CCR               ; Success; set Z prior to return
 .rt RTS
 

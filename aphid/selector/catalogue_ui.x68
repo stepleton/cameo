@@ -22,10 +22,11 @@
 *    - CatalogueMenuShow -- Show the scrolling menu drive image catalogue
 *    - CatalogueMenuUp -- Move the catalogue menu selection up
 *    - CatalogueMenuDown -- Move the catalogue menu selection down
-*    - AskImageNew -- A UI for creating a new disk image
-*    - AskImageDelete -- A UI for confirming disk image deletion
-*    - AskImageCopy -- A UI for copying a disk image
-*    - AskImageRename -- A UI for renaming a disk image
+*    - AskImageSelect -- A UI narrating the selection of a new drive image
+*    - AskImageNew -- A UI for creating a new drive image
+*    - AskImageDelete -- A UI for confirming drive image deletion
+*    - AskImageCopy -- A UI for copying a drive image
+*    - AskImageRename -- A UI for renaming a drive image
 
 
 * catalogue_ui Code ------------------------------
@@ -146,7 +147,31 @@ _CataloguePItem:
 .rt RTS
 
 
-    ; AskImageNew -- A UI for creating a new disk image
+    ; AskImageSelect -- A UI narrating the selection of a new drive image
+    ; Args:
+    ;   zCatMenu+kUISM_CPos: Index of the current selected drive image
+    ; Notes:
+    ;   Requires an accurate, up-to-date catalogue
+    ;   Clears the screen prior to performing and narrating the selection
+    ;   Z is set iff the selection operation succeeds
+    ;   Trashes D0-D2/A0-A2
+AskImageSelect:
+    LEA.L   zCatMenu(PC),A0      ; Point A0 at the catalog menu record
+    MOVE.W  kUISM_CPos(A0),-(SP)   ; Push currently selected item index to stack
+    BSR     CatalogueItemName    ; A0 now points at the selection's filename
+    ADDQ.L  #$2,SP               ; Pop item index off of stack
+    MOVE.L  A0,-(SP)             ; Push filename onto the stack
+
+    ; Perform and narrate the selection operation
+    BSR     ClearLisaConsoleScreen   ; Blank the screen
+    mUiPrint  r1c1,<'{ Select image }',$0A>
+    BSR     NImageChange         ; Change the disk image
+    ADDQ.L  #$4,SP               ; Pop filename off of stack
+    BSR     AskVerdictByZ        ; Print the verdict, await a keypress
+    RTS
+
+
+    ; AskImageNew -- A UI for creating a new drive image
     ; Args:
     ;   (none)
     ; Notes:
@@ -157,8 +182,8 @@ _CataloguePItem:
     ;       (User cancellation is not success)
     ;   Trashes D0-D2/A0-A2
 AskImageNew:
-    ; Copy the untitled disk image name to zBlock -- a scratch area that's also
-    ; the place where the disk image name will serve as an ImageNew argument
+    ; Copy the untitled drive image name to zBlock -- a scratch area that's also
+    ; the place where the drive image name will serve as an ImageNew argument
     PEA.L   sNewImageFilename(PC)  ; Copy from the default new image filename
     PEA.L   zBlock(PC)           ; Copy to the beginning of zBlock
     BSR     StrCpy255            ; Do the copy
@@ -188,9 +213,9 @@ AskImageNew:
 .rt RTS
 
 
-    ; AskImageDelete -- A UI for confirming disk image deletion
+    ; AskImageDelete -- A UI for confirming drive image deletion
     ; Args:
-    ;   zCatMenu+kUISM_CPos: Index of the current selected disk image
+    ;   zCatMenu+kUISM_CPos: Index of the current selected drive image
     ; Notes:
     ;   Requires an accurate, up-to-date catalogue
     ;   Attempts to refresh the catalogue if the deletion operation succeeds
@@ -279,9 +304,9 @@ _AskImageCommonOneArg:
 .rt RTS
 
 
-    ; AskImageCopy -- A UI for copying a disk image
+    ; AskImageCopy -- A UI for copying a drive image
     ; Args:
-    ;   zCatMenu+kUISM_CPos: Index of the current selected disk image
+    ;   zCatMenu+kUISM_CPos: Index of the current selected drive image
     ; Notes:
     ;   Requires an accurate, up-to-date catalogue
     ;   Attempts to refresh the catalogue if the copy operation succeeds
@@ -299,9 +324,9 @@ AskImageCopy:
     RTS
 
 
-    ; AskImageRename -- A UI for renaming a disk image
+    ; AskImageRename -- A UI for renaming a drive image
     ; Args:
-    ;   zCatMenu+kUISM_CPos: Index of the current selected disk image
+    ;   zCatMenu+kUISM_CPos: Index of the current selected drive image
     ; Notes:
     ;   Requires an accurate, up-to-date catalogue
     ;   Attempts to refresh the catalogue if the rename operation succeeds
@@ -324,7 +349,7 @@ AskImageRename:
     ;   SP+$C: l. Address of ImageCopy or ImageRename, as appropriate
     ;   SP+$8: l. Address of the title string ("Copy" or  "Rename")
     ;   SP+$4: l. Address of the subtitle ("Copy from" or "Old filename")
-    ;   zCatMenu+kUISM_CPos: Index of the current selected disk image
+    ;   zCatMenu+kUISM_CPos: Index of the current selected drive image
     ; Notes:
     ;   Requires an accurate, up-to-date catalogue
     ;   Attempts to refresh the catalogue if the image operation succeeds

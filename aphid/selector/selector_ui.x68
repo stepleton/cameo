@@ -309,9 +309,14 @@ _IF_Quarternary:
     ADDQ.L  #$2,SP                 ; Pop item index off of stack
     MOVE.L  A0,-(SP)               ; Push filename onto the stack
     BSR     NImageChange           ; Change the disk image
+    ADDQ.L  #$4,SP                 ; Pop filename off of stack
     BNE     _IF_Fatal              ; Quit to the outer loop on error
     BSR     NBootHd                ; Attempt to boot
     BRA     _IF_Secondary          ; We're back? Well, restart first nested loop
+
+    ; Menu key handler for selecting a disk image
+.ms BSR     AskImageSelect         ; Present user with image selection display
+    BRA     _IF_SecondaryNoUpdate  ; Restart first nested loop
 
     ; Menu key handler for creating a new disk image
 .mn BSR     AskImageNew            ; Present user with new drive image UI
@@ -328,10 +333,6 @@ _IF_Quarternary:
     ; Menu key handler for deleting a disk image
 .md BSR     AskImageDelete         ; Present user with drive image deletion UI
     BRA     _IF_SecondaryNoUpdate  ; Restart first nested loop
-
-    ; Menu key handler for quitting to the ROM
-.mq ANDI.B  #$FB,CCR               ; Clear the Z flag; we want to quit to ROM
-    BRA.S   .rt                    ; Jump ahead to quit
 
     ; Menu key handler for switching the menu on display
 .m_ LEA.L   zSuiWhichMenu(PC),A0   ; Point A0 at the "which menu" flag
@@ -357,13 +358,19 @@ _IF_Quarternary:
 .mk BSR     KeyValueEdit           ; User interface for key/value editing
     BRA     _IF_SecondaryNoUpdate  ; Restart first nested loop
 
-    ; Menu key handler for selecting a new device
-.ms ORI.B   #$04,CCR               ; Set the Z flag; we want a new device
+    ; Menu key handler for selecting a new port
+.mp ORI.B   #$04,CCR               ; Set the Z flag; we want a new device
+    BRA.S   .rt                    ; Jump ahead to quit
+
+    ; Menu key handler for quitting to the ROM
+.mq ANDI.B  #$FB,CCR               ; Clear the Z flag; we want to quit to ROM
     BRA.S   .rt                    ; Jump ahead to quit
 
     DS.W    0                      ; Word alignment
 .km DC.B    $01,'B'
     DC.W    (.mb-.km)              ; Action for B: boot from a drive image
+    DC.B    $01,'S'
+    DC.W    (.ms-.km)              ; Action for S: select a drive image
     DC.B    $01,'N'
     DC.W    (.mn-.km)              ; Action for N: create a new drive image
     DC.B    $01,'C'
@@ -372,8 +379,6 @@ _IF_Quarternary:
     DC.W    (.mr-.km)              ; Action for R: rename a drive image
     DC.B    $01,'D'
     DC.W    (.md-.km)              ; Action for D: delete a drive image
-    DC.B    $01,'Q'
-    DC.W    (.mq-.km)              ; Action for Q: quit to ROM
     DC.B    $00,'?'
     DC.W    (.m_-.km)              ; Action for ?: toggle the command menu
     DC.B    $01,'A'
@@ -382,8 +387,10 @@ _IF_Quarternary:
     DC.W    (.mm-.km)              ; Action for M: change moniker
     DC.B    $01,'K'
     DC.W    (.mk-.km)              ; Action for K: key/value editor
-    DC.B    $01,'S'
-    DC.W    (.ms-.km)              ; Action for K: select a new device
+    DC.B    $01,'P'
+    DC.W    (.mp-.km)              ; Action for P: select a new port
+    DC.B    $01,'Q'
+    DC.W    (.mq-.km)              ; Action for Q: quit to ROM
     DC.W    $0000                  ; Table terminator
 
 .rt RTS
@@ -432,10 +439,9 @@ sSuiNotParport:
     DC.B    'STARTUP FROM... menu',$00
 
 sSuiMenu1:
-    DC.B    'Command: B(oot, N(ew, C(opy, R(ename, D(elete, Q(uit, ?',$00
+    DC.B    'Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ?',$00
 sSuiMenu2:
-    DC.B    'Command: A(utoboot toggle, M(oniker, K(ey/value, '
-    DC.B    'S(witch port',$00
+    DC.B    'Command: A(utoboot toggle, M(oniker, K(ey/value, P(ort, Q(uit',$00
 
 sSuiFatal:
     DC.B    $0A,$0A,' Sorry about that. What now: Q(uit to the ROM or '
