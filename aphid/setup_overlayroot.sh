@@ -6,7 +6,7 @@
 # This shell script enables overlayroot filesystem protection for the root
 # filesystem---the last step in setting up your Cameo/Aphid stack as an
 # embedded appliance. With this option enabled, no changes to the root
-# filesystem will be saved to the MicroSD card---instead, changes are only
+# filesystem will be saved to the microSD card---instead, changes are only
 # saved to RAM and will be lost whenever the PocketBeagle is shut down or
 # rebooted. Cameo/Aphid drive images must reside on a second disk partition
 # that does not have overlayroot protection; the setup_dos_partition* scripts

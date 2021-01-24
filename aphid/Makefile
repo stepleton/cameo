@@ -14,9 +14,8 @@ SYSTEMD_DIR=/lib/systemd/system
 
 
 all:
+	gunzip - < selector/selector.image.zip > profile.image
 	$(MAKE) -C firmware
-	@echo Creating empty ProFile disk image file profile.image.
-	dd if=/dev/zero of=profile.image bs=5175296 count=1
 
 
 clean:
@@ -28,6 +27,10 @@ install:
 	$(MAKE) -C firmware install
 	mkdir -p $(INSTALL_DIR)
 	install --mode=775 profile.py $(INSTALL_DIR)
+	install --mode=664 profile_plugin_FFFEFD_system_info.py $(INSTALL_DIR)
+	install --mode=664 profile_plugin_FFFEFE_filesystem_ops.py $(INSTALL_DIR)
+	install --mode=664 profile_plugin_FFFEFF_key_value_store.py $(INSTALL_DIR)
+	install --mode=664 profile_plugins.py $(INSTALL_DIR)
 	install --backup=numbered --mode=664 profile.image $(INSTALL_DIR)
 	chown -R debian:debian $(INSTALL_DIR) | true  # Ignore error: dir may be
 	chmod -R ug+rw $(INSTALL_DIR) | true          # on another filesystem.

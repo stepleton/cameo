@@ -131,17 +131,34 @@ starting from block $0000 and counting up to block $25FF.
 distinguish between "tag bytes" or "data bytes", even though these divisions of
 a block are important to Lisas.)
 
+A microSD card initialised from the [pre-built software image](
+#software-installation), or any other installation that makes use of a
+[separate FAT32 partition for drive image storage](
+#4-optional-prepare-a-separate-partition-for-cameoaphid-drive-images), can be
+plugged into most modern computers and accessed like an ordinary flash drive.
+Some computers may show two drives, one called `rootfs` and another called
+`CAMEO_APHID`: the `CAMEO_APHID` drive is the home for hard drive images, and
+`rootfs` should be left alone. (Windows users who don't see a drive after
+plugging in their microSD cards may need to use the "Disk Management" or
+"Create and format hard disk partitions" control panel to assign a drive letter
+to the SD card's `CAMEO_APHID` partition.)
+
+On the `CAMEO_APHID` drive, hard drive image files are any that end in
+`.image`, with `profile.image` being the image file that Cameo/Aphid uses on
+start-up.  It is fine to copy, rename, and otherwise manage hard drive image
+files like any other kind of file, but Cameo/Aphid will not work if no file
+called `profile.image` exists.
+
 The operating system that runs on Cameo/Aphid's PocketBeagle computer is a
-version of Debian Linux. In standard Cameo/Aphid setups, the hard drive image
-file is `/usr/local/lib/cameo-aphid/profile.image`. To gain access to this
-file, for instance to make a backup or to replace it with a different disk
-image file, you use the same utilities (typically SSH, SCP) that you use for
-command line access and file transfer with ordinary Linux systems. It's
-necessary to establish a network connection with the PocketBeagle before you
-can use these tools; often this simply involves plugging the PocketBeagle into
-a conventional computer's USB port. (For more guidance on connecting to your
+version of Debian Linux. In standard Cameo/Aphid setups, the `CAMEO_APHID`
+partition is mounted at `/usr/local/lib/cameo-aphid`. If you have a network
+connection to the PocketBeagle, which usually establishes automatically when
+you plug a PocketBeagle into a modern computer's USB port, you can use ordinary
+communications utilities (typically SSH, SCP) for command line access and file
+transfer with the device. (For more guidance on connecting to your
 PocketBeagle, see the [BeagleBone "Getting Started" guide](
-http://beagleboard.org/static/beaglebone/latest/README.htm).)
+http://beagleboard.org/getting-started). You may need to use the IP addresses
+192.168.6.2 or 192.168.7.2 instead of the `beaglebone.local` convenience name.)
 
 In the future, it may become possible to upload and download disk images via a
 web browser.
@@ -261,10 +278,23 @@ The Cameo/Aphid software comprises
   I/O coprocessors ("PRUs" for short)
 * a [Python program](profile.py) that runs on the PocketBeagle's main
   processor, interpreting sector read/write commands from the Apple and
-  applying them to a hard drive image file.
+  applying them to a hard drive image file
+* a [Python plugin module](profile_plugins.py) for the program that provides a
+  "magic blocks" facility: reads and writes to these blocks can modify the
+  behaviour of the emulator or support a variety of operations unrelated to
+  ordinary hard drive data storage
+* a collection of Python module plugins that exploit this capability to provide
+  a [system information service](profile_plugin_FFFEFD_system_info.py), a
+  [file management service](profile_plugin_FFFEFE_filesystem_ops.py), and a
+  [key/value store](profile_plugin_FFFEFF_key_value_store.py)
+* a [software program for the Apple Lisa](selector), taking the form of a
+  bootable hard drive image, that uses the "magic block" plugins to provide a
+  versatile text-based interface for selecting and managing hard drive images.
 
 The software targets the following BeagleBone.org Debian Linux disk images:
 
+* `Debian 10.3 2020-04-06 4GB SD IoT` **(Not recommended: see below)**
+* `Debian 10.0 2019-07-07 4GB SD IoT`
 * `Debian 9.9 2019-08-03 4GB SD IoT`
 * `Debian 9.5 2018-10-07 4GB SD IoT`
 * `Debian 9.5 2018-08-30 4GB SD IoT`
@@ -275,6 +305,13 @@ available [here](http://beagleboard.org/latest-images). If none of these are
 listed under "Recommended Debian images", look for them under "Older Debian
 images" further down on the page. Newer images may work but have not been
 tested.
+
+(The `Debian 10.3 2020-04-06 4GB SD IoT` image is not recommended as it lacks
+support for the optional [power-off robustness mechanism](
+#8-optional-enable-power-off-robustness-for-the-root-filesystem) described
+below. [A feature request](
+https://github.com/beagleboard/Latest-Images/issues/80) to restore this support
+in future BeagleBone.org Debian Linux disk images has been filed.)
 
 Follow these steps to set up the Cameo/Aphid software on your PocketBeagle:
 
@@ -322,7 +359,7 @@ the compile by typing `make`. Compilation of the firmware and construction of
 the disk image (which is just an empty 5,175,296-byte file called
 `profile.image`) takes a couple dozen seconds.
 
-#### 4. (optional) Prepare a separate partition for Cameo/Aphid disk images.
+#### 4. (optional) Prepare a separate partition for Cameo/Aphid drive images.
 
 This optional step establishes a separate FAT32 partition on the SD card for
 ProFile disk image storage---required for setting up the robustness to power
@@ -363,12 +400,13 @@ usage instructions.
 
 The following steps are optional, but useful.
 
-#### 7. (optional) Disable unneeded Linux system services.
+#### 7. (optional) Disable unneeded Linux system facilities.
 
 With superuser privileges, and in the directory created by Step 3, run the
-script `setup_trim_services.sh`. This disables some PocketBeagle system
-services that aren't useful for hard disk emulation, which shaves a few seconds
-off the time it takes Cameo/Aphid to be ready after power-on.
+scripts `setup_trim_services.sh` and `setup_trim_misc.sh`. This disables some
+PocketBeagle system facilities that aren't useful for hard disk emulation,
+which shaves a few seconds off the time it takes Cameo/Aphid to be ready after
+power-on.
 
 #### 8. (optional) Enable power-off robustness for the root filesystem.
 
@@ -488,21 +526,6 @@ Potential future improvements and new features for Cameo/Aphid include:
   (Even a relatively small microSD card could easily store several thousand
   hard drive image files.)
 
-* A "magic blocks" mechanism: if the Apple attempts to read or write to a
-  block outside of the valid range of block addresses, the `profile.py` program
-  running on the ARM will dispatch the request to a configurable external
-  handler. This handler can service the read or write request as it chooses.
-  For example, the Apple might write `http://en.wikipedia.org` to (invalid)
-  block address $123456, and then reads from this block and the blocks
-  immediately following would "magically" contain the text of English
-  Wikipedia's front page. (The Apple would require modified disk drivers to
-  take advantage of this functionality.)
-
-* A "hard drive image file selector" disk image: a special disk image that
-  boots into a program that communicates with Cameo/Aphid using the "magic
-  block" mechanism (above) and allows the user to choose a particular hard
-  drive image file from a menu.
-
 * An Aphid-specific level translator PCB design instead of configurable,
   multi-purpose Cameo and its plugboard: it may be possible for the PCB to be
   a two-layer design, offering significant cost advantages. An integral DB-25
@@ -555,6 +578,8 @@ of the following people and resources:
   http://www.ti.com/litv/pdf/spruhv7b), and the
   [PocketBeagle System Reference Manual](
   https://github.com/beagleboard/pocketbeagle/wiki/System-Reference-Manual).
+* Pointers from zmatt of the [`#beagle` IRC channel on irc.freenode.net](
+  http://beagleboard.org/chat).
 * The entire [LisaList](https://groups.google.com/forum/#!forum/lisalist)
   community.
 * Anonymous friends.
@@ -582,3 +607,8 @@ performance with longer cables. (Tom Stepleton)
 
 12 January 2020: Upgraded `profile.py` to Python 3.5; the Apple can now command
 the emulator to use a different boot image or cease emulation. (Tom Stepleton)
+
+24 January 2021: Many changes, including the "magic blocks" plugin mechanism,
+the Selector program, and a bug fix that allows a Lisa to boot reliably from a
+Cameo/Aphid attached to the upper port of a 2-port parallel expansion card.
+(Tom Stepleton)

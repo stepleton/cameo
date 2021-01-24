@@ -3,8 +3,8 @@
 #
 # Forfeited into the public domain with NO WARRANTY. Read LICENSE for details.
 #
-# Together with setup_dos_partition_part2.sh, this shell script puts a fat32
-# partition in spare space on your MicroSD card, establishes a mount point for
+# Together with setup_dos_partition_part1.sh, this shell script puts a fat32
+# partition in spare space on your microSD card, establishes a mount point for
 # it, and modifies /etc/fstab to mount the partition automatically. Usage:
 #
 #    setup_dos_partition_part2.sh
