@@ -87,7 +87,7 @@ Interface:
 
     ; If here, the user wanted to choose a different device
 .cd BSR     ClearLisaConsoleScreen   ; Blank the screen
-    mUiPrint  r1c0,<' { Switch parallel port }',$0A>
+    mUiPrint  r1c0,<' { Choose parallel port }',$0A>
 
     ; Scan for devices, make a menu of devices to choose, and get a choice
 .cs BSR     NUpdateDriveCatalogue  ; Scan for connected Cameo/Aphid devices
@@ -127,10 +127,9 @@ Interface:
     BEQ     .cx                    ; If not, skip ahead to complain
 
     mUiPrint  <$0A,$0A,' Please select a parallel port by number.'>
-    BSR     FlushCops              ; Dump out the keyboard buffer
+.cm BSR     UiScreensaverWaitForKb   ; Await a keypress
+    BNE     .cd                    ; Back to top if it wasn't a keypress
     PEA.L   .ct(PC)                ; The key-interpreting table for UiPSystemKey
-.cm BSR     LisaConsoleWaitForKbMouse  ; Await a keypress
-    BNE.S   .cm                    ; Loop if it wasn't a keypress
     MOVE.B  zLisaConsoleKbChar(PC),-(SP)   ; Push the key we read onto the stack
     BSR     UiPSystemKey           ; Go interpret the key
     ADDQ.L  #$2,SP                 ; Pop the key we read off the stack
@@ -161,10 +160,9 @@ Interface:
 
     ; If we're here, we can't run; ask the user for a last-ditch action
 .uh mUiPrint  <$0A,$0A,' Q(uit to ROM, S(tart over, or try to B(oot anyway?'>
-    BSR     FlushCops              ; Dump out the keyboard buffer
+.ul BSR     UiScreensaverWaitForKb   ; Await a keypress
+    BNE     .cd                    ; Back to top if it wasn't a keypress
     PEA.L   .kt(PC)                ; The key-interpreting table for UiPSystemKey
-.ul BSR     LisaConsoleWaitForKbMouse  ; Await a keypress
-    BNE.S   .ul                    ; Loop if it wasn't a keypress
     MOVE.B  zLisaConsoleKbChar(PC),-(SP)   ; Push the key we read onto the stack
     BSR     UiPSystemKey           ; Go interpret the key
     ADDQ.L  #$2,SP                 ; Pop the key we read off the stack
@@ -250,8 +248,16 @@ _IF_Tertiary:
 
     ; Fall into the quarternary loop
 _IF_Quarternary:
-    ; Get and draw status from the Cameo/Aphid
-    BSR     DoSysInfo              ; Print system status information
+    ; Clear tally of how many times we've drawn the status line
+    CLR.W   D3                     ; Note: we clear it in other places, too
+
+    ; Get and draw status from the Cameo/Aphid, or do the screensaver
+.sl BSR     DoSysInfo              ; Print system status information
+    ADDQ.W  #$1,D3                 ; Increment the tally of status line draws
+    CMPI.W  #$3C,D3                ; Are there 60 of them so far?
+    BLO.S   .pl                    ; Not yet; skip ahead to poll KB and mouse
+    BSR     UiScreensaver          ; Yes, time for the screensaver!
+    BRA.S   _IF_SecondaryNoUpdate  ; We're back; go redraw the screen
 
     ; Poll the keyboard and mouse for input, for a little while
 .pl MOVE.W  D2,-(SP)               ; Push D2 to the stack
@@ -262,24 +268,30 @@ _IF_Quarternary:
     BSR     LisaConsoleDelayForKbMouse   ; Poll the COPS for input
     ; Process the result of polling
 .px MOVEM.W (SP)+,D2               ; Restore D2 from stack, leaving flags alone
-    BCC.S   _IF_Quarternary        ; Nothing read from COPS? Restart from top
+    BCC.S   .sl                    ; Nothing read from COPS? Refresh status line
     BEQ.S   .me                    ; A glyph key is fully typed; go deal with it
     ROXR.W  #$1,D0                 ; Test X by rotating and checking the sign...
-    BMI.S   .pl                    ; ...If set, we needd to get more COPS bytes
+    BMI.S   .pl                    ; ...If set, we need to get more COPS bytes
     
-    ; If here, we interpret raw character codes for scrolling
+    ; If here, we interpret raw character codes for scrolling, and the way this
+    ; is implemented means you can "turbo scroll" by moving the mouse while you
+    ; hold down the key; I actually like this a lot, so let's let it stay :-)
     PEA.L   .ks(PC)                ; The key-interpreting table for UiPSystemKey
     MOVE.B  zLisaConsoleKbCode(PC),-(SP)   ; Push the raw keycode onto the stack
     BSR     UiPSystemKey           ; Go interpret the key
     ADDQ.L  #$6,SP                 ; Pop the UiPSystemKey arguments
-    BNE.S   .pl                    ; Loop if user typed a nonsense key
+    BNE.S   .zt                    ; Loop if user typed a nonsense key
     JMP     (A0)                   ; Jump as directed by the menu selection
 
+    ; For resetting the screensaver countdown without drawing the status line
+.zt CLR.W   D3                     ; Clear the tally of status line draws
+    BRA.S   .pl                    ; Return to keyboard polling
+
 .cu BSR     CatalogueMenuUp        ; Move upward in the disk image menu
-    BRA.S   .pl                    ; Return to the quarternary loop
+    BRA.S   .zt                    ; Get ready to return to keyboard polling
 
 .cd BSR     CatalogueMenuDown      ; Move downward in the disk image menu
-    BRA.S   .pl                    ; Return to the quarternary loop
+    BRA.S   .zt                    ; Get ready to return to keyboard polling
 
     DS.W    0                      ; Word alignment
 .ks DC.B    $00,$A5
@@ -399,6 +411,8 @@ _IF_Quarternary:
     ; Handling fatal errors -- quit out of _IF_Secondary
     ; Code must not BSR or JSR here: use an ordinary jump
     ; Will exit from the "calling" function (on purpose)
+    ; Does not run the screensaver here, so screen burn-in could be a risk after
+    ; a fatal error, just like with the Classic MacOS "bomb" dialogue
 _IF_Fatal:
     PEA.L   sSuiFatal(PC)          ; Push the address of the apology string
     mUiPrint  s                    ; Print it

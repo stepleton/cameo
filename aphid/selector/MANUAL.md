@@ -22,6 +22,7 @@ automatically select and boot from one of the images.
 * [User interface notes](#user-interface-notes)
   - [A working keyboard is needed for interactive use](#a-working-keyboard-is-needed-for-interactive-use)
   - [Accessibility](#accessibility)
+  - [Screensaver](#screensaver)
 * [Main interactive interface and menu options](#main-interactive-interface-and-menu-options)
   - [B(oot and S(elect](#boot-and-select)
   - [N(ew](#new)
@@ -76,6 +77,28 @@ impairments. Other shortcomings may exist.
 If you are having trouble using the Selector due to any of its accessibility
 limitations, please [contact me via email](mailto:stepleton@gmail.com).
 
+### Screensaver
+
+The Selector has a built-in screensaver that displays a scrolling texture on
+the screen. At certain places where the Selector expecting user input, it will
+automatically start the screensaver after around 90 seconds of waiting. You can
+exit the screensaver by pressing any key.
+
+![The Selector's screensaver starting up](screensaver.jpg
+"The Selector's screensaver starting up")
+
+The Selector is not capable of activating the screensaver in all situations
+where it expects user input --- for example, input textboxes like those used to
+collect filenames cannot be interrupted by the screensaver. It's hoped that the
+screensaver works now in most of the situations where the Selector is likely to
+be left unattended. Don't rely on the Selector's screensaver alone to protect
+your Lisa's CRT from burn-in.
+
+The screensaver's scrolling texture is based on the [Rule 30](
+https://en.wikipedia.org/wiki/Rule_30) elementary finite automaton, which was
+discovered around the time the Lisa was developed. It expands from a single
+pixel and widens to stretch across the entire screen.
+
 
 ## Main interactive interface and menu options
 
@@ -84,7 +107,7 @@ like this:
 
 ```
 
- [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.6]
+ [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.7]
 
   Filename                                                    1,234,567,890 bytes free
  --------------------------------------------------------------------------------------
@@ -129,11 +152,11 @@ keypad to move the selection up and down respectively.
 
 The top of the screen shows a partial menu of keyboard commands:
 ```
- [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.6]
+ [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.7]
 ```
 The bracket `(` indicates that the first letter of the command activates the
 command, thus the `C` key will start the Copy command. Also shown here are the
-version number of the Selector software (the `0.6` in square brackets at right)
+version number of the Selector software (the `0.7` in square brackets at right)
 and the "moniker" for this Cameo/Aphid (the `No Name` in square brackets at
 left). A moniker is a name given to a Cameo/Aphid for identification purposes:
 more precisely, it's a name given to a microSD card containing an installation
@@ -452,7 +475,7 @@ screen prior to booting from the designated hard drive image:
 ```
 
  [Cameo/Aphid]
- Hard drive image manager v0.6
+ Hard drive image manager v0.7
  Connecting to the boot drive: the built-in parallel port... OK
  Loading configuration into the key/value cache... OK
  Reading configuration... OK
@@ -696,3 +719,5 @@ image selector without the help of the following people and resources:
 (Tom Stepleton, [stepleton@gmail.com](mailto:stepleton@gmail.com), London)
 
 24 January 2021: 0.6 release, adding the S(elect command. (Tom Stepleton)
+
+30 January 2021: 0.7 release, adding a screensaver. (Tom Stepleton)

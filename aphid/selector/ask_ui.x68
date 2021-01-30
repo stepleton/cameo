@@ -30,13 +30,17 @@
     ;   At the bottom of the screen (row 34), prints "Operation" followed by the
     ;       verdict string, then ". Press any key to continue."
     ;   Prior contents of row 34 are not cleared
+    ;   Will show the screensaver after a delay, then reprints the verdict even
+    ;       though it's probably gonna look weird; we still want the user who
+    ;       went off to the toilet to know whether something succeeded or failed
+    ;       when they come back
     ;   Trashes D0-D1/A0-A1
 AskVerdict:
     mUiGotoRC   #$22,#$1         ; Jump to the bottom of the screen
     MOVE.L    $4(SP),-(SP)       ; Duplicate verdict address on stack
     mUiPrint  <'Operation '>,s,<'. Press any key to continue.'>
-.wt BSR     LisaConsoleWaitForKbMouse  ; Await a keypress
-    BNE.S   .wt                  ; Keep waiting if it wasn't a keypress
+    BSR     UiScreensaverWaitForKb   ; Await a keypress
+    BNE.S   AskVerdict           ; Go back to the top if it wasn't a keypress
     RTS
 
 

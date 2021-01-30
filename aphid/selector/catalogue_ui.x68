@@ -236,13 +236,13 @@ AskImageDelete:
     ADDQ.L  #$8,SP               ; Pop StrCpy255 args off the stack
 
     ; Ask the user if they really want to delete this file
-    BSR     ClearLisaConsoleScreen   ; Blank the screen
+.cf BSR     ClearLisaConsoleScreen   ; Blank the screen
     PEA.L   zBlock(PC)           ; Push the filename to delete onto the stack
     mUiPrint  r1c1,<'{ Delete image }',$0A,$0A,'   Image file: '>,s
     PEA.L   sAskReturnCancel(PC)   ; Message about keys to press
     mUiPrint  <$0A,$0A,' This operation CANNOT BE UNDONE!',$0A>,s
-.wt BSR     LisaConsoleWaitForKbMouse  ; Await a keypress
-    BNE.S   .wt                  ; Keep waiting if it wasn't a keypress
+.wt BSR     UiScreensaverWaitForKb   ; Await a keypress
+    BNE     .cf                  ; Back to the top if it wasn't a keypress
     MOVE.B  zLisaConsoleKbCode(PC),D0  ; Load user's key into D0
     CMPI.B  #$48,D0              ; Did the user type Return?
     BEQ.S   .go                  ; If so, go delete the file

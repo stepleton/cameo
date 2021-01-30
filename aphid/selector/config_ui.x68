@@ -73,8 +73,8 @@ AskAutoboot:
 .ad mUiPrint  <'S',$28,'et autoboot to this file, or C',$28,'ancel?',$0A,$0A,' '>
 
     ; ...but not how we interpret their keypresses :-)
-.lp BSR     LisaConsoleWaitForKbMouse  ; Await a keypress
-    BNE.S   .lp                    ; Loop if it wasn't a keypress
+.lp BSR     UiScreensaverWaitForKb   ; Await a keypress
+    BNE     AskAutoboot            ; Back to the top if this wasn't a keypress
     PEA.L   .km(PC)                ; The key-interpreting table for UiPSystemKey
     MOVE.B  zLisaConsoleKbChar(PC),-(SP)   ; Push the key we read onto the stack
     BSR     UiPSystemKey           ; Go interpret the key
