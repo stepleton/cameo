@@ -429,7 +429,7 @@ Cameo/Aphid devices connected to the same computer. This command presents this
 interface:
 ```
 
- { Switch parallel port }
+ { Choose parallel port }
 
  Scanning for connected Cameo/Aphid devices... done.
  (1) Built-in parallel port: "My Moniker"
