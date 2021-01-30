@@ -80,7 +80,7 @@ limitations, please [contact me via email](mailto:stepleton@gmail.com).
 ### Screensaver
 
 The Selector has a built-in screensaver that displays a scrolling texture on
-the screen. At certain places where the Selector expecting user input, it will
+the screen. At certain places where the Selector expects user input, it will
 automatically start the screensaver after around 90 seconds of waiting. You can
 exit the screensaver by pressing any key.
 
@@ -89,15 +89,15 @@ exit the screensaver by pressing any key.
 
 The Selector is not capable of activating the screensaver in all situations
 where it expects user input --- for example, input textboxes like those used to
-collect filenames cannot be interrupted by the screensaver. It's hoped that the
-screensaver works now in most of the situations where the Selector is likely to
-be left unattended. Don't rely on the Selector's screensaver alone to protect
-your Lisa's CRT from burn-in.
+collect filenames cannot be interrupted by the screensaver. Still, it's hoped
+that the screensaver works now in the situations where the Selector is most
+likely to be left unattended. Don't rely on the Selector's screensaver alone to
+protect your Lisa's CRT from burn-in.
 
 The screensaver's scrolling texture is based on the [Rule 30](
 https://en.wikipedia.org/wiki/Rule_30) elementary finite automaton, which was
 discovered around the time the Lisa was developed. It expands from a single
-pixel and widens to stretch across the entire screen.
+pixel and widens to stretch across the screen.
 
 
 ## Main interactive interface and menu options
