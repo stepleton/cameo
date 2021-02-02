@@ -34,7 +34,7 @@ install:
 	install --backup=numbered --mode=664 profile.image $(INSTALL_DIR)
 	chown -R debian:debian $(INSTALL_DIR) | true  # Ignore error: dir may be
 	chmod -R ug+rw $(INSTALL_DIR) | true          # on another filesystem.
-	install cameo-aphid.service $(SYSTEMD_DIR)
+	install --mode=644 cameo-aphid.service $(SYSTEMD_DIR)
 	@echo
 	@echo 'To start ProFile emulation on boot, execute:'
 	@echo '    sudo systemctl enable cameo-aphid'

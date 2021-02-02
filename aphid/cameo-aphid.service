@@ -17,7 +17,12 @@ Requires=systemd-modules-load.service
 [Service]
 User=root
 WorkingDirectory=/usr/local/lib/cameo-aphid
-ExecStart=/usr/local/lib/cameo-aphid/profile.py profile.image
+# With the --skip_load_pru_firmware and --skip_pin_setup flags, it's necessary
+# for the header pins to have been configured ahead of time by a device tree
+# overlay, and for the PRU firmware to have been pre-loaded by the kernel during
+# boot (accomplished by using the filenames am335x-pru0-fw and am335x-pru1-fw
+# in /lib/firmware/). The payoff for this extra trouble is faster boot times.
+ExecStart=/usr/local/lib/cameo-aphid/profile.py --skip_load_pru_firmware --skip_pin_setup profile.image
 # The first kill signal tells Cameo to flush all pending writes to the disk
 # image. The second tells Cameo to terminate.
 ExecStop=/bin/kill $MAINPID

@@ -67,13 +67,13 @@ https://github.com/beagleboard/pocketbeagle/wiki/System-Reference-Manual#333_Pow
 and wait for the "chasing lights" pattern (see below) to stop. It should only
 take a few seconds.
 
-(Full shutdown is not as important on Debian 9.5 and later OS releases, as long
-as all the optional steps in the [installation instructions](
+(**UPDATE:** Full shutdown is not as important on Debian 9.5 and later OS
+releases, as long as all the optional steps in the [installation instructions](
 #full-instructions-for-manual-software-installation) have been carried out.
 The [pre-made SD card image](#software-installation) was made in this way.
 Robustness to power cuts is one step toward making Cameo/Aphid a suitable
-replacement for Widget internal hard drives, though [other hurdles](
-#future-work) remain.)
+replacement for Widget internal hard drives: further details of [improvements
+targeting Widget replacement](#future-work) are below.)
 
 ![Locations of the User LEDs and power button on the PocketBeagle](pics/ui.jpg)
 
@@ -86,7 +86,11 @@ these:
 2. **While the operating system is booting**: One LED is on nearly constantly,
    another blinks in a "heartbeat" rhythm; a third blinks with SD card access.
 3. **While Cameo/Aphid software is starting up**: All four LEDs blink
-   sequentially in a rapid "chasing" or "rotating" pattern.
+   sequentially in a rapid "chasing" or "rotating" pattern. (**UPDATE:** This
+   step will be skipped if all the non-optional steps in the [installation
+   instructions](#full-instructions-for-manual-software-installation) are
+   carried out, or if the [pre-made SD card image](#software-installation) is
+   used.)
 4. **When Cameo/Aphid is ready**: All four LEDs are on constantly.
 5. **When Cameo/Aphid processes a disk command from the Apple**: All four LEDs
    blink off momentarily.
@@ -116,6 +120,15 @@ Apple's DB-25 socket with no enclosure or physical support. If your Apple is
 installed on an unpainted metal table or rack, take care that no components or
 solder joints on the PocketBeagle or Cameo circuit boards rest on any metal
 surface: stray electrical connections could result.
+
+The electronics on the Cameo level translator cape do not work well with long
+parallel cables. Little work has been carried out to determine the longest
+cable that can work with Cameo/Aphid, but lengths between 50cm (20") and "as
+short as possible" are probably preferable. Cameo/Aphid will work when attached
+to a Widget hard drive ribbon cable inside a Lisa 2/10. Apple II users should
+note that a typical Apple II ProFile interface card installation uses a
+somewhat lengthy cable to connect the card to the parallel port. (Cameo/Aphid
+has not yet been tested on an Apple II.)
 
 ### Hard drive images
 
@@ -384,12 +397,28 @@ on boot. The specific steps that `make install` performs are:
 
 - Copy the PRU-ICSS firmware files `aphd_pru0_datapump.fw` and
   `aphd_pru1_control.fw` to the `/lib/firmware` directory.
+- Copy those files to `/lib/firmware` a second time, but use the filenames
+  `am335x-pru0-fw` and `am335x-pru1-fw`, which causes the kernel to load the
+  firmware into the PRU-ICSS coprocessors at boot time.
+- Copy the device tree overlay file `PB-CAMEO-APHID.dtbo` to the
+  `/lib/firmware` directory.
 - Create the directory `/usr/local/lib/cameo-aphid` (if not already present)
   and copy the disk image file `profile.image` and the Python program
   `profile.py` inside.
 - Copy the `cameo-aphid.service` service script to `/lib/systemd/system`.
 
-#### 6. Tell the PocketBeagle to start the Cameo/Aphid emulator system on boot.
+#### 6. Tell the PocketBeagle to use the Cameo/Aphid device tree overlay.
+
+With superuser privileges, and in the directory created by Step 3, run the
+`setup_device_tree_overlay.sh` script. This tells the Linux kernel running on
+the PocketBeagle to load the `PB-CAMEO-APHID.dtbo` device tree overlay on
+startup, which causes the PocketBeagle to configure its low-level facilities at
+boot time for communication with an Apple through the Cameo level translator
+cape. (Specifically, it primarily sets up the "pinmux", which controls how
+devices built into the PocketBeagle like the PRUs connect to physical
+PocketBeagle pins.)
+
+#### 7. Tell the PocketBeagle to start the Cameo/Aphid emulator system on boot.
 
 With superuser privileges, execute the command `systemctl enable cameo-aphid`.
 
@@ -400,7 +429,7 @@ usage instructions.
 
 The following steps are optional, but useful.
 
-#### 7. (optional) Disable unneeded Linux system facilities.
+#### 8. (optional) Disable unneeded Linux system facilities.
 
 With superuser privileges, and in the directory created by Step 3, run the
 scripts `setup_trim_services.sh` and `setup_trim_misc.sh`. This disables some
@@ -408,7 +437,7 @@ PocketBeagle system facilities that aren't useful for hard disk emulation,
 which shaves a few seconds off the time it takes Cameo/Aphid to be ready after
 power-on.
 
-#### 8. (optional) Enable power-off robustness for the root filesystem.
+#### 9. (optional) Enable power-off robustness for the root filesystem.
 
 Only if Step 5 has been carried out, run the script `setup_overlayroot.sh` with
 superuser privileges. This causes the PocketBeagle to boot into a mode where
@@ -492,7 +521,7 @@ Potential future improvements and new features for Cameo/Aphid include:
 * 10MB ProFile emulation (easy), or Widget emulation (harder, since many more
   low-level hard drive commands are required).
 
-* Support for Lisa 2/10 drive bay installation: an ongoing effort.
+* Support for Lisa 2/10 drive bay installation: largely complete.
 
   - :heavy_check_mark:
     Increased robustness to power cuts allow Cameo/Aphid to operate within the
@@ -504,16 +533,17 @@ Potential future improvements and new features for Cameo/Aphid include:
     drive bay causes signal quality issues that can lead to malfunctions,
     likely due to ringing or reflections that can confuse the TXS0108E level
     adaptor ICs about signal direction. Inline 100Ω terminating resistors on all
-    Cameo signal lines except PEX1, PEX2, and PEX3 appears to dampen the ringing
+    Cameo signal lines except PEX1, PEX2, and PEX3 appear to dampen the ringing
     well enough for Cameo/Aphid to work.
   
-  - :x:
-    When Cameo/Aphid and a Lisa 2/10 are powered on at the same time, the Lisa
-    boot ROM will attempt to boot from Cameo/Aphid before it is ready, leading
-    to a boot error. (Once Cameo/Aphid is ready, the user can then select
-    "STARTUP FROM..." to get to the boot menu, then choose to boot from the
-    internal drive as usual.) Some other remedy is required before a Lisa 2/10
-    can boot from an internally-installed Cameo/Aphid without any user input.
+  - :heavy_check_mark:
+    When a Lisa 2/10 is powered on, it will attempt to boot from its internal
+    parallel port in around 22 seconds. For Cameo/Aphid installed internally to
+    make use of the Widget hard drive's power supply, it must boot and be ready
+    to emulate a hard drive in a similar amount of time: if it's too slow, the
+    Lisa will present a boot error and require user input. Improvements to the
+    Cameo/Aphid boot procedure now reduce startup time below the critical
+    threshold required for automatic booting.
 
   - :man_shrugging:
     Finally, some substitute for the green hard drive status LED should be
@@ -612,3 +642,7 @@ the emulator to use a different boot image or cease emulation. (Tom Stepleton)
 the Selector program, and a bug fix that allows a Lisa to boot reliably from a
 Cameo/Aphid attached to the upper port of a 2-port parallel expansion card.
 (Tom Stepleton)
+
+3 February 2021: Automatic firmware loading on startup and the addition of a
+device tree overlay dramatically reduce boot times, making it feasible to
+install Cameo/Aphid inside a Lisa 2/10.

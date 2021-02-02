@@ -133,9 +133,21 @@ def _define_flags() -> argparse.ArgumentParser:
           'Create the empty hard drive image file image_file if it does not '
           'already exist.'))
   flags.add_argument(
+      '--skip_pin_setup', action='store_true', help=(
+          'Bypass the typical startup operation of configuring the I/O header '
+          'pins. (Use this option if the header pins are pre-configured on '
+          'boot by a device tree overlay.)'))
+  flags.add_argument(
       '--skip_pru_restart', action='store_true', help=(
           'Bypass the typical startup cycle of stopping the PRUs, designating '
-          'the firmware to run, and restarting the firmware.'))
+          'the firmware to run, and restarting the firmware. This option '
+          'implies --skip_load_pru_firmware.'))
+  flags.add_argument(
+      '--skip_load_pru_firmware', action='store_true', help=(
+          'Bypass the typical startup operation of designating the PRU '
+          'firmware to run. (Use this option if the Cameo/Aphid PRU firmware '
+          'is loaded automatically from /lib/firmware/am335x-pru0-fw and '
+          '/lib/firmware/am335x-pru1-fw).'))
   flags.add_argument(
       'image_file', type=str, help=(
           'Path to the hard drive image file.'))
@@ -259,8 +271,26 @@ def setup_pins():
       f.write('in\n')
 
 
-def boot_pru_firmware(device):
-  """(Re)install Aphid firmware onto PRU0 and PRU1; (re)boot both."""
+def setup_pru_firmware(device, load_firmware=True):
+  """Ensure PRU 0 and PRU 1 are running the Aphid firmware
+
+  Stops any currently-running firmware running on the PRUs, directs the kernel
+  to load the Aphid firmware, and starts that firmware.
+
+  Args:
+    device: The device file for the RPMsg connection to PRU 1. (Usually this is
+        `/dev/rpmsg_pru31`.) After starting the firmware, this routine sends
+        a meaningless message to PRU 1 to initiate its ordinary operation.
+    load_firmware: If set, this routine will direct the kernel to load the
+        firmware files `/lib/firmware/aphd_pru0_datapump.fw` and
+        `/lib/firmware/aphd_pru1_control.fw` into the PRUs. Not necessary if the
+        kernel is loading the firmware at boot time from
+        `/lib/firmware/am335x-pru[01]-fw`.
+
+  Raises:
+    RuntimeError: Various errors in attempting to establish running firmware on
+        the PRU, most relating to timeouts.
+  """
 
   # Immediately after the PocketBeagle boots, the filesystem objects for
   # controlling PRUs may not be available. We wait on them for up to a minute.
@@ -283,10 +313,11 @@ def boot_pru_firmware(device):
       logging.info("Couldn't stop PRU %d; maybe it's not running. "
                    'Carrying on...', i)
 
-  # Indicate which firmware we'd like to run the PRU.
-  logging.info('Pointing remoteproc at the Aphid PRU firmware...')
-  with open(PRU0_FW_CHOOSER_PATH, 'w') as f: f.write(PRU0_FW_NAME + '\n')
-  with open(PRU1_FW_CHOOSER_PATH, 'w') as f: f.write(PRU1_FW_NAME + '\n')
+  if load_firmware:
+    # Indicate which firmware we'd like to run the PRU.
+    logging.info('Pointing remoteproc at the Aphid PRU firmware...')
+    with open(PRU0_FW_CHOOSER_PATH, 'w') as f: f.write(PRU0_FW_NAME + '\n')
+    with open(PRU1_FW_CHOOSER_PATH, 'w') as f: f.write(PRU1_FW_NAME + '\n')
 
   # Start the firmware.
   logging.info('Starting the Aphid PRU firmware...')
@@ -302,10 +333,11 @@ def boot_pru_firmware(device):
     else:
       raise RuntimeError('Gave up waiting on PRU {} firmware boot.'.format(i))
 
-  # Despite all these precautions, it seems necessary to wait a bit to be
-  # assured that the PRU is ready for RPMsg communication, particularly after
-  # reboots. This is an empirical finding. It probably depends on load :-(
-  time.sleep(15.0)
+  if not load_firmware:
+    # Despite all these precautions, it seems necessary to wait a bit to be
+    # assured that the PRU is ready for RPMsg communication, particularly after
+    # reboots. This is an empirical finding. It probably depends on load :-(
+    time.sleep(15.0)
 
   # The firmware waits for an RPMsg message in order to learn critical
   # identifiers for communicating back to the ARM. Here we send it a
@@ -826,7 +858,7 @@ def profile(
         elif sector == 0xfffffe:  # Get the last data read or written
           data = last_data
         elif 0xff0000 <= sector < 0xffff00 and sector in plugins:  # Plugin call
-          data = plugins[sector](op, sector, retry_count, sparing_thresh, None)
+          data = plugins[sector](op, sector, retry_count, sparing_thresh, None)  # type: ignore
           if len(data) != SECTOR_SIZE:                     # Enforce proper size
             data = data[:SECTOR_SIZE] + bytes(max(0, SECTOR_SIZE - len(data)))
         else:                     # Get a sector from the disk image
@@ -935,9 +967,10 @@ def main(FLAGS: argparse.Namespace):
     # Have the LEDs cycling in the background as we set things up.
     with leds.cycling_in_background():
       # Set up the pinmux for the Aphid firmware.
-      setup_pins()
+      if not FLAGS.skip_pin_setup: setup_pins()
       # (Re)start the Aphid firmware on the PRUs.
-      if not FLAGS.skip_pru_restart: boot_pru_firmware(FLAGS.device)
+      if not FLAGS.skip_pru_restart: setup_pru_firmware(
+          device=FLAGS.device, load_firmware=FLAGS.skip_load_pru_firmware)
 
     # Open the PRU RPMsg device file.
     fd = None  # type: Optional[int]

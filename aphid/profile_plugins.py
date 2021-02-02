@@ -205,7 +205,7 @@ def load_plugins(directory: str = '.') -> Dict[int, Plugin]:
       logging.info('Plugins: loading %s...', item.stem)
       module_spec = importlib.util.spec_from_file_location(item.stem, str(item))
       module = importlib.util.module_from_spec(module_spec)
-      module_spec.loader.exec_module(module)
+      module_spec.loader.exec_module(module)  # type: ignore
       plugin = module.plugin()  # type: ignore
       plugins[block] = plugin
     except Exception:

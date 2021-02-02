@@ -1,0 +1,128 @@
+/* Apple parallel port storage emulator for Cameo
+ *
+ * Forfeited into the public domain with NO WARRANTY. Read LICENSE for details.
+ *
+ * This file: a device tree overlay for Cameo/Aphid.
+ *
+ * When activated at boot, this device tree overlay reserves the header pins
+ * that Cameo/Aphid uses, introduces a pinmux configuration for those pins, and
+ * enables the PRUs.
+ */
+
+/dts-v1/;
+/plugin/;
+
+/* This header file doesn't exist on our pocketbeagle, so we replicate
+ * necessary symbols manually. */
+/* #include <dt-bindings/board/am335x-pb-base.h> */
+#define PB_P1_02 0x08e4
+#define PB_P1_29 0x09ac
+#define PB_P1_30 0x0974
+#define PB_P1_31 0x09a0
+#define PB_P1_33 0x0994
+#define PB_P1_36 0x0990
+#define PB_P2_09 0x0984
+#define PB_P2_24 0x0830
+#define PB_P2_28 0x09a8
+#define PB_P2_30 0x099c
+#define PB_P2_32 0x0998
+#define PB_P2_34 0x09a4
+#define PB_P2_35 0x08e0
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/am33xx.h>
+
+/ {
+	/* For showing loaded overlays at /proc/device-tree/chosen/overlays/ */
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			chosen {
+				overlays {
+					PB-CAMEO-APHID = __TIMESTAMP__;
+				};
+			};
+		};
+	};
+
+	/* Reserve these header pins so the pinmux helpers don't claim them. */
+	fragment@1 {
+		target = <&ocp>;
+		__overlay__ {
+			P1_02_pinmux { status = "disabled"; };
+			P1_29_pinmux { status = "disabled"; };
+			P1_30_pinmux { status = "disabled"; };
+			P1_31_pinmux { status = "disabled"; };
+			P1_33_pinmux { status = "disabled"; };
+			P1_36_pinmux { status = "disabled"; };
+			P2_09_pinmux { status = "disabled"; };
+			P2_24_pinmux { status = "disabled"; };
+			P2_28_pinmux { status = "disabled"; };
+			P2_30_pinmux { status = "disabled"; };
+			P2_32_pinmux { status = "disabled"; };
+			P2_34_pinmux { status = "disabled"; };
+			P2_35_pinmux { status = "disabled"; };
+		};
+	};
+
+	/* Introduce a pinmux configuration for Cameo/Aphid. */
+	fragment@2 {
+		target = <&am33xx_pinmux>;
+		__overlay__ {
+
+			/* Here is our new pinmux configuration. It's called
+			 * "pinmux_aphd_pins", and you can find the files that
+			 * correspond to this declaration at
+			 * /sys/firmware/devicetree/base/ocp/l4_wkup@44c00000/
+			 *     scm@210000/pinmux@800/pinmux_aphd_pins
+			 *
+			 * The symbol "aphd_pins" can then be used to refer to
+			 * this configuration elsewhere in this overlay. */
+			aphd_pins: pinmux_aphd_pins {
+				pinctrl-single,pins = <
+
+					/* Ordinary GPIO pins. Even though these
+					 * pins are accessible to the ARM, the
+					 * only part of the Cameo/Aphid software
+					 * that touches them are the PRU
+					 * firmware programs. The ARM tells the
+					 * PRUs what to do over rpmsg. */
+
+					AM33XX_IOPAD(PB_P1_29, PIN_INPUT | MUX_MODE7 )
+					AM33XX_IOPAD(PB_P1_31, PIN_INPUT | MUX_MODE7 )
+					AM33XX_IOPAD(PB_P1_33, PIN_INPUT | MUX_MODE7 )
+					AM33XX_IOPAD(PB_P1_36, PIN_INPUT | MUX_MODE7 )
+					AM33XX_IOPAD(PB_P2_28, PIN_INPUT | MUX_MODE7 )
+					AM33XX_IOPAD(PB_P2_30, PIN_INPUT | MUX_MODE7 )
+					AM33XX_IOPAD(PB_P2_32, PIN_INPUT | MUX_MODE7 )
+					AM33XX_IOPAD(PB_P2_34, PIN_INPUT | MUX_MODE7 )
+
+					/* PRU-exclusive pins. Note that all are
+					 * declared "inputs" even though the
+					 * latter two are PRU outputs --- IIRC,
+					 * from the ARM's perspective, they're
+					 * inputs. */
+
+					/* Input pins */
+					AM33XX_IOPAD(PB_P1_02, PIN_INPUT | MUX_MODE6 )
+					AM33XX_IOPAD(PB_P1_30, PIN_INPUT | MUX_MODE6 )
+					AM33XX_IOPAD(PB_P2_09, PIN_INPUT | MUX_MODE6 )
+					/* Output pins: note 2.24 is unusual for
+					 * doing input in Mode 6. */
+					AM33XX_IOPAD(PB_P2_24, INPUT_EN | MUX_MODE6 )
+					AM33XX_IOPAD(PB_P2_35, INPUT_EN | MUX_MODE5 )
+				>;
+			};
+		};
+	};
+
+	/* Required for use of the PRUs. */
+	fragment@3 {
+		target = <&pruss>;
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&aphd_pins>;
+			status = "okay";
+		};
+	};
+};
