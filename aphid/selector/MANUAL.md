@@ -271,7 +271,7 @@ catalogue to be certain that the duplicate hard drive image has been created.
 
 ### R(ename
 
-The **Rename** command is for duplicating ProFile hard drive images. It presents
+The **Rename** command is for renaming ProFile hard drive images. It presents
 this interface:
 ```
 

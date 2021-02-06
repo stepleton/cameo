@@ -3,9 +3,13 @@
 
 Forfeited into the public domain with NO WARRANTY. Read LICENSE for details.
 
-When run atop the entire Cameo cape/Aphid PRU firmware stack, emulates a 5MB
-ProFile hard drive. Backing storage is a 5,175,296-byte file mmap'd into this
-program's process space.
+When run atop the entire Cameo cape/Aphid PRU firmware stack, emulates a
+ProFile hard drive. Backing storage is a single file (a "disk image file")
+mmap'd into this program's process space. For accurate simulation of an
+ordinary 5 MB ProFile, the disk image file should be 5,175,296 bytes in size,
+for a ProFile-10, 10,350,592 bytes. Any other drive image announces itself to
+the Apple as a 5 MB ProFile with a strange number of available blocks, a
+convention intended to replicate the behaviour of X/ProFile.
 
 Run with the --help flag for usage information.
 
@@ -55,23 +59,18 @@ import profile_plugins
 ###################
 
 
-IMAGE_SIZE = 5175296  # Hard drive image size in bytes.
+IMAGE_SIZE_P5  = 5175296   # 5 MB ProFile hard drive image size in bytes.
+IMAGE_SIZE_P10 = 10350592  # 10 MB ProFile hard drive image size in bytes.
 
-SECTOR_SIZE = 532  # Sector size in bytes. Note "block size" in SPARE_TABLE.
+SECTOR_SIZE = 532  # Sector size in bytes. Cf. "block size" in spare tables.
 
-SPARE_TABLE = (  # The sector $FFFFFF spare table for a healthy 5MB ProFile.
-    b'PROFILE      '     # Device name. This indicates a 5MB ProFile.
-    b'\x00\x00\x00'      # Device number. Also means "5MB ProFile".
-    b'\x03\x98'          # Firmware revision $0398. (Latest sold?)
-    b'\x00\x26\x00'      # Blocks available. 9,728 blocks.
-    b'\x02\x14'          # Block size. 532 bytes.
-    b'\x20'              # Spare blocks on device. 32 blocks.
-    b'\x00'              # Spare blocks allocated. 0 blocks.
-    b'\x00'              # Bad blocks allocated. 0 blocks.
-    b'\xff\xff\xff'      # End of the list of (no) spare blocks.
-    b'\xff\xff\xff'      # End of the list of (no) bad blocks. Spare table ends.
-    b'Cameo/Aphid 0001'  # Secret Cameo/Aphid device ID and protocol version :-)
-) + bytes(532 - 32 - 16)
+# This "secret" Cameo/Aphid device ID and protocol version is appended to the
+# end of the sector $FFFFFF spare table data structure, allowing software to
+# identify when a Cameo/Aphid is present (and how to talk to it). For major
+# revisions to this protocol (which includes the format of writes to $FFFFFD
+# and to various standard (whatever that means) "magic blocks" plugins),
+# increment the 4-digit number at the end.
+CAMEO_APHID_ID = b'Cameo/Aphid 0001'
 
 # For the beginning of command messages that tell the Aphid PRU1 firmware to
 # execute various operations, we use statistically-unusual sequences of bytes.
@@ -486,9 +485,53 @@ def rpmsg_write(rpmsg: Rpmsg, data: bytes, delay: float = 5.0):
 ################################
 
 
+def make_spare_table(image_size: int) -> bytes:
+  """Compute sector $FFFFFF spare table data for a given size disk image.
+
+  A read from a ProFile's block $FFFFFF returns a data structure called the
+  "spare table". This data structure contains basic information about the type
+  of the drive, basic parameters like the number of sectors it has, and lists
+  of bad blocks and spare blocks in use (both empty for Cameo/Aphid). Spare
+  tables created by this function also include a string that identifies the
+  drive as a Cameo/Aphid and a version number for the protocol that the Apple
+  uses to access Cameo/Aphid-specific features.
+
+  Args:
+    image_size: Size of the disk image (in bytes) from which the Cameo/Aphid
+        will be serving hard drive data. A size of exactly 10350592 will yield
+        a spare table indicating that the drive is a ProFile-10 (device name
+        "PROFILE 10M  ", device number $000010, firmware revision $0404); other
+        sizes present the drive as a 5 MB ProFile (device name "PROFILE      ",
+        device number $000000, firmware revision $0398) whose number of
+        available blocks is `image_size // 532`.
+
+  Returns:
+    The contents of the 532-byte "spare table" returned by a read to $FFFFFF.
+  """
+  profile_10 = image_size == IMAGE_SIZE_P10  # Is this image for a ProFile 10?
+  num_blocks = image_size // SECTOR_SIZE
+  logging.info('Using %s headers for this disk image file.',
+               'ProFile-10' if profile_10 else 'default ProFile')
+  return (
+      (b'PROFILE 10M  ' if profile_10 else b'PROFILE      ') +  # Device name.
+      (b'\x00\x00\x10'  if profile_10 else b'\x00\x00\x00') +   # Device number.
+      (b'\x04\x04'      if profile_10 else b'\x03\x98') +       # Firmware rev.
+      struct.pack('>L', num_blocks)[1:] +  # Number of blocks available.
+      b'\x02\x14' +      # Block size. 532 bytes.
+      b'\x20' +          # Spare blocks on device. 32 blocks.
+      b'\x00' +          # Spare blocks allocated. 0 blocks.
+      b'\x00' +          # Bad blocks allocated. 0 blocks.
+      b'\xff\xff\xff' +  # End of the list of (no) spare blocks.
+      b'\xff\xff\xff' +  # End of the list of (no) bad blocks. Spare table ends.
+      CAMEO_APHID_ID     # Secret Cameo/Aphid device ID and protocol version :-)
+  ) + bytes(SECTOR_SIZE - 32 - 16)
+
+
 class Image(NamedTuple(
     'Image', [('image_file', BinaryIO),
-              ('mapped', mmap.mmap)])):
+              ('mapped', mmap.mmap),
+              ('image_size', int),
+              ('spare_table', bytes)])):
   """I/O-related objects for memory-mapped disk image files.
 
   Use `image_mmap` to initialise/prepare this data structure.
@@ -498,6 +541,8 @@ class Image(NamedTuple(
         disk image file with this object; in fact, you probably shouldn't use
         it for anything.
     mapped: A writeable mmap object for the file's entire contents.
+    image_size: Size of the disk image in bytes.
+    spare_table: Sector $FFFFFF spare table contents for this disk image.
   """
 
 
@@ -507,8 +552,9 @@ def image_mmap(path: str, create: bool) -> Generator[Image, None, None]:
 
   A context manager that opens and mmaps the disk image file, optionally
   creating it beforehand if `create` is True and the file does not exist.
-  When control exits the context, the map is closed and the file is sync'd
-  to disk.
+  (Created image files are always 5 MB ProFile images, but disk image files
+  can be any size.) When control exits the context, the map is closed and the
+  file is sync'd to disk.
 
   Args:
     path: Path to the image file.
@@ -517,10 +563,6 @@ def image_mmap(path: str, create: bool) -> Generator[Image, None, None]:
 
   Yields:
     An Image object initialised from `path`.
-
-  Raises:
-    IOError: either this function was told to create an image file that already
-        existed, or the specified image file was the wrong size.
   """
 
   # Create the new image file if directed.
@@ -529,22 +571,22 @@ def image_mmap(path: str, create: bool) -> Generator[Image, None, None]:
         "File {} already exists; won't overwrite it with a new disk "
         'image.'.format(path))
     with open(path, 'wb') as f:
-      for s in range(IMAGE_SIZE // SECTOR_SIZE):
+      for s in range(IMAGE_SIZE_P5 // SECTOR_SIZE):
         f.write(bytes(SECTOR_SIZE))
       f.flush()
 
-  # Check that the image file is the correct size.
-  true_image_size = os.stat(path).st_size
-  if true_image_size != IMAGE_SIZE: raise IOError(
-      'File {} has size {}, but a real ProFile disk image should have '
-      'size {}.'.format(path, true_image_size, IMAGE_SIZE))
+  # Measure the size of the image file and use that to create the data for the
+  # spare table.
+  image_size = os.stat(path).st_size
+  logging.info('Mapping the %d-byte disk image file %s.', image_size, path)
+  spare_table = make_spare_table(image_size)
 
   # Open and mmap the file to allow reads and writes. Yield the file object
   # and the memory. When the caller is done with it, aggressively save.
   with open(path, 'rb+') as bf:
-    mem = mmap.mmap(bf.fileno(), length=IMAGE_SIZE, access=mmap.ACCESS_WRITE)
+    mem = mmap.mmap(bf.fileno(), length=image_size, access=mmap.ACCESS_WRITE)
     try:
-      yield Image(bf, mem)
+      yield Image(bf, mem, image_size, spare_table)
     finally:
       mem.flush()
       mem.close()
@@ -590,7 +632,7 @@ class ImageFlusher:
     """Context manager entry. Create and run the flusher thread."""
 
     def thread():
-      _, mem = self._image
+      mem = self._image.mapped
       while True:
         self._event.wait()               # Wait for anything to happen
         if self._cease.is_set(): return  # Exit the thread if it's time to quit
@@ -626,7 +668,7 @@ def image_get_sector(image: Image, sector: int) -> bytes:
   start_index = sector * SECTOR_SIZE
   end_index = start_index + SECTOR_SIZE
 
-  if start_index < 0 or end_index > IMAGE_SIZE: return bytes(SECTOR_SIZE)
+  if start_index < 0 or end_index > image.image_size: return bytes(SECTOR_SIZE)
   return image.mapped[start_index:end_index]
 
 
@@ -651,14 +693,14 @@ def image_put_sector(
   Raises:
     ValueError: `data` is not 532 bytes long.
   """
-  _, mem = image
+  mem = image.mapped
   if len(data) != SECTOR_SIZE: raise ValueError(
       'Sector data supplied to image_put_sector for sector {} was {} bytes '
       'long. It should be {} bytes.'.format(sector, len(data), SECTOR_SIZE))
 
   start_index = sector * SECTOR_SIZE
   end_index = start_index + SECTOR_SIZE
-  if start_index < 0 or end_index > IMAGE_SIZE: return
+  if start_index < 0 or end_index > image.image_size: return
 
   mem[start_index:end_index] = data
   if flusher is not None:
@@ -854,7 +896,7 @@ def profile(
       if op == PROFILE_READ:
         logging.info('[%s]  Read sector $%06X', hex_command, sector)
         if sector == 0xffffff:    # Get the spare table
-          data = SPARE_TABLE
+          data = image.spare_table
         elif sector == 0xfffffe:  # Get the last data read or written
           data = last_data
         elif 0xff0000 <= sector < 0xffff00 and sector in plugins:  # Plugin call
