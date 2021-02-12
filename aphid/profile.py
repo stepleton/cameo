@@ -332,7 +332,7 @@ def setup_pru_firmware(device, load_firmware=True):
     else:
       raise RuntimeError('Gave up waiting on PRU {} firmware boot.'.format(i))
 
-  if not load_firmware:
+  if load_firmware:
     # Despite all these precautions, it seems necessary to wait a bit to be
     # assured that the PRU is ready for RPMsg communication, particularly after
     # reboots. This is an empirical finding. It probably depends on load :-(
@@ -1012,7 +1012,8 @@ def main(FLAGS: argparse.Namespace):
       if not FLAGS.skip_pin_setup: setup_pins()
       # (Re)start the Aphid firmware on the PRUs.
       if not FLAGS.skip_pru_restart: setup_pru_firmware(
-          device=FLAGS.device, load_firmware=FLAGS.skip_load_pru_firmware)
+          device=FLAGS.device,
+          load_firmware=(not FLAGS.skip_load_pru_firmware))
 
     # Open the PRU RPMsg device file.
     fd = None  # type: Optional[int]
