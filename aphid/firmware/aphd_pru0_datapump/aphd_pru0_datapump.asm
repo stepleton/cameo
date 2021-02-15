@@ -12,29 +12,49 @@
 ;   3. Writing: outgoing data, clocked by \PSTRB, is served from shared RAM;
 ;      the \PPARITY signal is precomputed externally and also served from RAM.
 ;
-; PRU 0 loops in idle mode by default. When it receives a host 0 interrupt
-; (i.e. when r31.t30 goes high), it examines the following command data
-; structure at the low end of the shared memory space:
+; PRU 0 loops in idle mode by default. When it receives a host 1 interrupt
+; (i.e. when PRU 1 issues a ePRU1to0 system event, i.e. when r31.t30 goes high),
+; it examines the following command data structure at the low end of the shared
+; memory space:
 ;
 ;   Byte 0: (reserved for "return code")
 ;        1: command; 0x00 for reading in data, 0x01 for writing data out
 ;      2-3: number of bytes/words to read in/write out
 ;      4-7: address (in PRU0's address space) to read/write data from/to.
 ;
-; After entering the corresponding mode and completing the specified command,
-; the PRU places a "return value" in byte 0 above and dispatches a host 0
-; interrupt. Return codes are:
+; Immediately after receiving a host 1 interrupt for initiating a command, the
+; PRU replaces the command byte with its bitwise complement. As host 1
+; interrupts can also be used to terminate read and write modes prematurely
+; (i.e. before all data has been transferred; see below), this precaution
+; ensures that any terminating interrupt that arrives "too late" (and that would
+; therefore be interpreted as a command initiation signal) will direct the PRU
+; to execute a harmless invalid command.
+;
+; (As was just mentioned:) Read and write operations can be aborted by issuing a
+; host 1 interrupt while the operation is in progress. In contrast with the
+; command issuing procedure, a termination interrupt does not require any
+; parameterisation or additional communication (e.g. preparation of values in
+; shared memory).
+;
+; After entering a specified operating mode and completing the command provided
+; (normally or abnormally), the PRU places a "return code" in byte 0 above and
+; dispatches a host 0 interrupt. Return codes are:
 ;
 ;   0: Last operation was successful
 ;   1: Command dispatch unsuccessful (usually means: command unrecognised)
-;   2: Read mode timed out waiting for \PSTRB to go low
-;   3: Read mode timed out waiting for \PSTRB to go high
-;   4: Write mode timed out waiting for \PSTRB to go low
-;   5: Write mode timed out waiting for \PSTRB to go high
-;   6: Write mode was cancelled prematurely.
+;   2: Read mode interrupted waiting for \PSTRB to go low
+;   3: Read mode interrupted waiting for \PSTRB to go high
+;   4: Write mode interrupted waiting for \PSTRB to go low
+;   5: Write mode interrupted waiting for \PSTRB to go high
 ;
-; The write operation (but not reads) can be cancelled by issuing an ePRU1to0
-; system event while the operation is in progress. See WRITE for details.
+; There is an additional subtletly around return codes 4 and 5 when the
+; interrupt arrives coincident to the very last outbound byte; see notes at the
+; WRITE definition for details.
+;
+; Return code $FF is guaranteed never to be set by PRU 0. It's advisable to
+; set this return code prior to issuing any data pump command; if you
+; encounter it after you believe the completed, then the firmware has not
+; completed the command yet and may never have begun.
 ;
 ; When reading, PRU 0 stores bytes from the data lines contiguously in memory,
 ; starting from the address specified in the command data structure. When
@@ -55,6 +75,11 @@
 ;                            |              ^
 ;                            |              |
 ;              write ordered `--->[WRITE]---' write complete
+;
+; If it is necessary to reset PRU 0 to the IDLE state, the recommended procedure
+; is to repeatedly issue host 1 interrupts with a command value of 0x80 in the
+; shared memory data pump command data structure, awaiting a host 0 interrupt
+; each time, until the "return code" accompanying the interrupt is ignored.
 ;
 ; The interrupt controller setup assumed by this firmware is described by a
 ; resource table definition in the accompanying file aphd_pru0_resource_table.c.
@@ -101,6 +126,8 @@
 ;
 ; Revision history:
 ;   1: New file, by stepleton@gmail.com, London
+;   2: Conversion to timeout-free operation for improved compatibility with
+;      MacWorks, by stepleton@gmail.com, London
 
 
 ;;;;;;;;;;;;;;;;;;;;;
@@ -269,7 +296,7 @@ INIT:
     ; Configure data pins as inputs.
     mDirIn
     ; Clear the interrupt PRU 1 uses to invoke a datapump operation.
-    SBCO    &rCLEAR_INT, cINTC, oINTC_SICR, 4  ; Write to SICR to clear int.
+    SBCO    &rCLEAR_INT, cINTC, oINTC_SICR, 4  ; Write to SICR to clear intrupt.
     ; Fall through now to IDLE.
 
 
@@ -281,27 +308,34 @@ INIT:
     ;       been placed at the beginning of PRU shared RAM. See documentation
     ;       at the top of this file for details on the contents and formatting
     ;       of the command structure.
-    ;   After handling a read command, the host 1 interrupt will be cleared by
-    ;       the REPORT subroutine. For write commands, the interrupt clearing
-    ;       happens prior to the jump to WRITE; this allows it to detect and
-    ;       handle operation-cancelling interrupts from PRU1.
+    ;   Immediately after the host 1 interrupt, clears the host 1 interrupt. Any
+    ;       new host 1 interrupt issued while the operation being initiated is
+    ;       in progress (i.e. before this PRU issues a host 0 interrupt) will
+    ;       terminate the operation.
+    ;   After the command is copied internally, the command in PRU shared RAM is
+    ;       bitwise-complemented. This precaution ensures that a host 1
+    ;       interrupt intended to cancel an operation, but that arrives after an
+    ;       operation concludes, doesn't wind up causing the same operation to
+    ;       be carried out again.
     ;   Error codes from command dispatch and I/O routines are placed in the
     ;       first byte of shared PRU RAM. Values are:
     ;         0: Success
     ;         1: Unrecognised command
-    ;         2-3: Errors in READ (see READ documentation)
-    ;         4-6: Errors in WRITE (see WRITE documentation).
+    ;         2-3: Premature termination of READ (see READ documentation)
+    ;         4-5: Premature termination of WRITE (see WRITE documentation).
 IDLE:
     mRead                            ; Read data lines
     mParity                          ; Update parity bit for data on lines
     QBBC    IDLE, r31, iPRU1to0      ; Keep idling if no interrupt
     ; Interrupt received; download command data structure and decode.
+    SBCO    &rCLEAR_INT, cINTC, oINTC_SICR, 4  ; Write to SICR to clear intrupt.
     LBCO    &rCOMMAND, cSHARED, 0, 8   ; Download command data structure
-    QBEQ    _I_READ, rCOMMAND.b1, dREAD    ; Handle a read command
-    QBEQ    _I_WRITE, rCOMMAND.b1, dWRITE  ; Handle a write command
+    NOT     rCOMMAND.b1, rCOMMAND.b1   ; Bitwise-complement the command byte
+    SBCO    &rCOMMAND.b1, cSHARED, 1, 1  ; Store that byte back in shared mem.
+    QBEQ    _I_READ, rCOMMAND.b1, 0xff-dREAD     ; Handle a read command
+    QBEQ    _I_WRITE, rCOMMAND.b1, 0xff-dWRITE   ; Handle a write command
     ; Unrecognised command; report error and resume idling.
     LDI     rCOMMAND.b0, 0x01        ; Error 1 means unrecognised command
-    SBCO    &rCOMMAND.b0, cSHARED, 0, 1  ; Store result in bottom of shared RAM
     QBA     REPORT                   ; Report to PRU 1; return to idle loop
 
     ; Handle a read command and resume idling.
@@ -312,8 +346,6 @@ _I_READ:
 
     ; Handle a write command and resume idling.
 _I_WRITE:
-    SBCO    &rCLEAR_INT, cINTC, oINTC_SICR, 4  ; Write to SICR to clear int.
-    SBCO    &rONES.b0, cSHARED, 1, 1   ; Preset command to cancel in shared mem.
     MOV     rWRITE, rBUFFER          ; Make buffer start address arg for WRITE
     LSL     rs_IDLE.w0, rCOMMAND.w2, 1   ; Convert word count to byte count
     ADD     rWRITE_END, rWRITE, rs_IDLE.w0   ; Make buffer end addr. (exclusive)
@@ -325,45 +357,40 @@ _I_WRITE:
 ;;;;;   rREAD: lower bound byte address of the buffer for incoming data
     ;   rREAD_END: upper bound byte address (exclusive) of the buffer
     ; Notes:
+    ;   READ operations in progress may be terminated early by a host 1
+    ;       interrupt.
     ;   READ places a result code in the first byte of shared PRU RAM. Values:
     ;       0: Buffer filled; all data successfully read.
-    ;       2: Timed out waiting for host to lower \PSTRB.
-    ;       3: Timed out waiting for host to raise \PSTRB.
+    ;       2: Interrupted whilst waiting for host to lower \PSTRB.
+    ;       3: Interrupted whilst waiting for host to raise \PSTRB.
 READ:
 _R_OUTER:
     ; Outer READ loop begins immediately.
-    QBGE    _R_SUCCESS, rREAD_END, rREAD   ; Jump to exit if all bytes are read
+    LDI     rCOMMAND.b0, 0           ;   Reset our return code to 0
+    QBGE    _R_DONE, rREAD_END, rREAD  ; Jump to exit if all bytes are read
 
     ; Wait for \PSTRB to go low.
-    LDI     rs_READ.w0, 0xffff       ;   65536 iterations of the following:
-    LOOP    _R_INNER_1, rs_READ.w0   ;     Loop waiting for \PSTRB to go low
+    LDI     rCOMMAND.b0, 1           ;   If interrupted, return code is now 1
+_R_INNER_1:
     mRead                            ;     Read data lines
     mParity                          ;     Update parity bit for data on lines
-    QBBC    _R_PSTRB_LO, r31, ppSTRB   ;   Exit loop if \PSTRB is low
-_R_INNER_1:
-    LDI     rCOMMAND.b0, 2           ;   Error 2 means we timed out waiting...
-    QBA     _R_DONE                  ;   ...for \PSTRB to go low
+    QBBS    _R_DONE, r31, iPRU1to0   ;     Abort if interrupted
+    QBBS    _R_INNER_1, r31, ppSTRB  ;     Keep looping if \PSTRB is high
 
     ; Wait for \PSTRB to go high.
-_R_PSTRB_LO:
-    LDI     rs_READ.w0, 0xffff       ;   65536 iterations of the following:
-    LOOP    _R_INNER_2, rs_READ.w0   ;     Loop waiting for \PSTRB to go high
+    LDI     rCOMMAND.b0, 2           ;   If interrupted, return code is now 2
+_R_INNER_2:
     mRead                            ;     Read data lines
     mParity                          ;     Update parity bit for data on lines
-    QBBS    _R_PSTRB_HI, r31, ppSTRB   ;   Exit loop if \PSTRB is high
-_R_INNER_2:
-    LDI     rCOMMAND.b0, 3           ;   Error 3 means we timed out waiting...
-    QBA     _R_DONE                  ;   ...for \PSTRB to go high
+    QBBS    _R_DONE, r31, iPRU1to0   ;     Abort if interrupted
+    QBBC    _R_INNER_2, r31, ppSTRB  ;     Keep looping if \PSTRB is low
 
     ; Add the byte to the data buffer, then return to the top of the outer loop
     ; for the next byte.
-_R_PSTRB_HI:
     SBBO    &rGPIO_IN, rREAD, 0, 1   ;   Copy last input byte to the buffer
     ADD     rREAD, rREAD, 1          ;   Point rREAD to the next byte in memory
     QBA     _R_OUTER                 ; End outer loop
 
-_R_SUCCESS:
-    LDI     rCOMMAND.b0, 0           ; Successful read: error 0
 _R_DONE:
     ; Update statistics.
     ADD     rR_ASK, rR_ASK, rCOMMAND.w2  ; Update read-requested total
@@ -371,7 +398,6 @@ _R_DONE:
     SUB     rs_READ, rCOMMAND.w2, rs_READ  ; Compute bytes successfully read
     ADD     rR_DONE, rR_DONE, rs_READ  ; Update read-successfully total
     ; Export error result (value in rCOMMAND.b0) via shared RAM, then return.
-    SBCO    &rCOMMAND.b0, cSHARED, 0, 1  ; Store result on bottom of shared RAM
     QBA     REPORT                   ; Signal PRU 1; return to idle loop
 
 
@@ -384,29 +410,23 @@ _R_DONE:
     ;       the sixth bit of <parity byte> supplying odd parity for <data byte>.
     ;       The other bits are ignored, so it is safe to use values like 0x00
     ;       and 0xFF, provided the sixth bit is set appropriately.
+    ;   WRITE operations in progress may be terminated early by a host 1
+    ;       interrupt. When terminated, WRITE will complete with result code 0
+    ;       if it has already placed the final word from memory onto the data
+    ;       and parity lines, even if the Lisa hasn't pulsed ~PSTRB for that
+    ;       data yet. The ProFile handshake undertaken by some Apple Lisa
+    ;       software (including the Office System) requires this complication,
+    ;       as certain handshake bytes are not clocked via \PSTRB.
     ;   WRITE places a result code in the first byte of shared PRU RAM. Values:
     ;       0: Buffer filled; all data successfully read.
-    ;       4: Timed out waiting for host to lower \PSTRB.
-    ;       5: Timed out waiting for host to raise \PSTRB.
-    ;       6: WRITE was interrupted prematurely.
-    ;   It is possible to cancel WRITE operations in progress by issuing an
-    ;       ePRU1to0 system event. WRITE will complete with result code 0
-    ;       (success) if it has already placed the final byte from memory onto
-    ;       the data lines, but a cancelling interrupt at any other time will
-    ;       yield result code 6. The ProFile handshake undertaken by some Apple
-    ;       Lisa software (including the Office System) requires this
-    ;       complication, as certain handshake bytes are not clocked via \PSTRB.
-    ;   WRITE changes the command in the command data structure in shared memory
-    ;       space from $01 (the command that invoked WRITE in the first place)
-    ;       to $FF. It does this to avoid a race condition in which the WRITE
-    ;       completes just before a cancelling interrupt is received, at which
-    ;       point the cancelling interrupt would just look like an interrupt
-    ;       intended to start a new data pump operation.
+    ;       4: Interrupted before all data written, whilst awaiting \PSTRB high.
+    ;       5: Interrupted before all data written, whilst awaiting \PSTRB low.
 WRITE:
     mDirOut                          ; Set data lines to output mode
     ; Outer WRITE loop begins.
 _W_OUTER:
-    QBGE    _W_SUCCESS, rWRITE_END, rWRITE   ; Jump to exit if all words written
+    LDI     rCOMMAND.b0, 0           ;   Reset our return code to 0
+    QBGE    _W_DONE, rWRITE_END, rWRITE  ; Jump to exit if all words written
 
     ; Copy out the next word (data byte and byte with the parity bit).
     LBBO    &rs_WRITE, rWRITE, 0, 2  ;   Copy word from RAM to scratch register
@@ -416,27 +436,18 @@ _W_OUTER:
     MOV     r30.b1, rs_WRITE.b1      ;   Write parity bit to PRU output lines
 
     ; Wait for \PSTRB to go low.
-    LDI     rs_WRITE.w0, 0xffff      ;   65536 iterations of the following
-    LOOP    _W_INNER_1, rs_WRITE.w0  ;     Loop waiting for \PSTRB to go low
-    QBBC    _W_PSTRB_LO, r31, ppSTRB   ;   Exit loop if \PSTRB is low
-    QBBS    _W_INTR, r31, iPRU1to0   ;     Handle cancellation if interrupted
+    LDI     rCOMMAND.b0, 4           ;   If interrupted, return code is now 4
 _W_INNER_1:
-    LDI     rCOMMAND.b0, 4           ;     Error 4 means we timed out waiting...
-    QBA     _W_DONE                  ;     ...for PSTRB to go low
+    QBBS    _W_DONE, r31, iPRU1to0   ;     Handle cancellation if interrupted
+    QBBS    _W_INNER_1, r31, ppSTRB  ;     Keep looping if \PSTRB is high
 
-    ; Wait for \PSTRB to go high. Note the jump to the top of the outer loop...
-_W_PSTRB_LO:
-    LDI     rs_WRITE.w0, 0xffff      ;   65536 iterations of the following
-    LOOP    _W_INNER_2, rs_WRITE.w0  ;     Loop waiting for \PSTRB to go high
-    QBBS    _W_OUTER, r31, ppSTRB    ;     Exit loop if \PSTRB is high
-    QBBS    _W_INTR, r31, iPRU1to0   ;     Handle cancellation if interrupted
+    ; Wait for \PSTRB to go high.
+    LDI     rCOMMAND.b0, 5           ;   If interrupted, return code is now 5
 _W_INNER_2:
-    LDI     rCOMMAND.b0, 5           ;     Error 5 means we timed out waiting...
-    QBA     _W_DONE                  ;     ...for PSTRB to go high
+    QBBS    _W_DONE, r31, iPRU1to0   ;     Handle cancellation if interrupted
+    QBBC    _W_INNER_2, r31, ppSTRB  ;     Keep looping if \PSTRB is low
+    QBA     _W_OUTER                 ;   Loop to copy out the next word
 
-    ; If here, all bytes are successfully written.
-_W_SUCCESS:
-    LDI     rCOMMAND.b0, 0           ; We mark success with error 0
 _W_DONE:
     mDirIn                           ; Set data lines to input mode
     ; Update statistics.
@@ -445,43 +456,29 @@ _W_DONE:
     LSR     rs_WRITE, rs_WRITE, 1    ; Convert bytes to words
     SUB     rs_WRITE, rCOMMAND.w2, rs_WRITE  ; Compute words successfully wrote
     ADD     rW_DONE, rW_DONE, rs_WRITE   ; Add to successfully-written total
+    ; If we didn't write all the bytes, the error result stands
+    QBNE    REPORT, rs_WRITE, rCOMMAND.w2  ; Jump to REPORT now in that case
+    LDI     rCOMMAND.b0, 0           ; Otherwise, override to success!
     ; Export error result (value in rCOMMAND.b0) via shared RAM, then return.
-    SBCO    &rCOMMAND.b0, cSHARED, 0, 1  ; Store result on bottom of shared RAM
-    QBA     REPORT                   ; Signal PRU 1; return to idle loop
-
-    ; If here, PRU1 has interrupted the write operation.
-_W_INTR:
-    mDirIn                           ; Set data lines to input mode
-    ; Update statistics.
-    ADD     rW_ASK, rW_ASK, rCOMMAND.w2  ; Update write-requested total
-    SUB     rs_WRITE, rWRITE_END, rWRITE   ; How many bytes were left to write?
-    LSR     rs_WRITE, rs_WRITE, 1    ; Convert bytes to words
-    SUB     rs_WRITE, rCOMMAND.w2, rs_WRITE  ; Compute words successfully wrote
-    ADD     rW_DONE, rW_DONE, rs_WRITE   ; Add to successfully-written total
-    ; Base error result on whether this interrupt stopped us prematurely.
-    QBEQ    _W_INTR_OK, rs_WRITE, rCOMMAND.w2  ; Did we write all the words?
-    LDI     rCOMMAND.b0, 6           ; No, we were interrupted prematurely
-    SBCO    &rCOMMAND.b0, cSHARED, 0, 1  ; Store result on bottom of shared RAM
-    QBA     REPORT                   ; Signal PRU 1; return to idle loop
-_W_INTR_OK:
-    LDI     rCOMMAND.b0, 0           ; Yes, we did write all the words!
-    SBCO    &rCOMMAND.b0, cSHARED, 0, 1  ; Store result on bottom of shared RAM
     ; QBA     REPORT                 ; Signal PRU 1; return to idle loop
                                      ; Or just fall through instead of branching
 
 
 ;;;;; REPORT -- Report completion of a datapump operation to PRU 1
 ;;;;; Args:
-;;;;;   (none)
+;;;;;   rCOMMAND.b0: Return code to store in shared memory
     ; Notes:
+    ;   Updates the return code in shared memory.
     ;   Updates the copy of the usage statistics in shared memory.
     ;   Clears the host 1 interrupt that IDLE received from PRU 1.
     ;   Triggers a host 0 interrupt to inform PRU 1 that the datapump operation
     ;       has completed.
 REPORT:
+    SBCO    &rCOMMAND.b0, cSHARED, 0, 1  ; Store return code in shared RAM
     ; Update the copy of the usage statistics in shared memory.
     SBCO    &rR_ASK, cSHARED, 8, 16  ; Place them just after the command struct
-    ; Clear the interrupt PRU 1 used to invoke a datapump operation.
-    SBCO    &rCLEAR_INT, cINTC, oINTC_SICR, 4  ; Write to SICR to clear int.
+    ; Inform PRU0 that the operation is complete
     LDI     r31.b0, sPRU0to1         ; Fire off an interrupt to PRU1
+    ; Clear our inbound interrupt again in case PRU1 interrupted us.
+    SBCO    &rCLEAR_INT, cINTC, oINTC_SICR, 4  ; Write to SICR to clear intrupt.
     QBA     IDLE                     ; Return to the idle loop

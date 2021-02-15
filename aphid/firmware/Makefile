@@ -18,6 +18,7 @@ all: PB-CAMEO-APHID.dtbo
 
 
 clean:
+	rm -f PB-CAMEO-APHID.dtbo PB-CAMEO-APHID.preprocessed.dts
 	$(MAKE) -C aphd_pru0_datapump clean
 	$(MAKE) -C aphd_pru1_control clean
 

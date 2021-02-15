@@ -661,3 +661,6 @@ install Cameo/Aphid inside a Lisa 2/10. (Tom Stepleton)
 
 6 February 2021: 10 MB ProFile emulation and support for arbitrarily-sized drive
 images. (Tom Stepleton)
+
+15 February 2021: Eliminate timeouts in PRU0 firmware (and add timeouts to PRU1
+firmware in strategic places) for better MacWorks compatibility. (Tom Stepleton)

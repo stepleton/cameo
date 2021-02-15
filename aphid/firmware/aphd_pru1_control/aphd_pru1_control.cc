@@ -2,11 +2,11 @@
 //
 // Forfeited into the public domain with NO WARRANTY. Read LICENSE for details.
 //
-// This file: firmware for PRU 1; main program
+// This file: firmware for PRU1; main program
 //
-// PRU 1 is the "control processor" in charge of data exchange with the ARM and
-// parallel port handshaking. PRU 1 handles the \PCMD, \PBSY, and PR/\W signal
-// lines directly, but issues commands to PRU 0 (the "data pump") to move data
+// PRU1 is the "control processor" in charge of data exchange with the ARM and
+// parallel port handshaking. PRU1 handles the \PCMD, \PBSY, and PR/\W signal
+// lines directly, but issues commands to PRU0 (the "data pump") to move data
 // in and out over the data lines whilst handling \PSTRB and \PPARITY.
 
 
@@ -29,7 +29,7 @@
 //// CONFIGURATION ////
 
 
-// An "armless" PRU 1 firmware does not request the ARM to copy data into or
+// An "armless" PRU1 firmware does not request the ARM to copy data into or
 // out of the buffers on reads or writes. The firmware is still capable of
 // responding to buffer manipulation commands from the ARM, but it does not
 // report to the ARM any commands received from the Apple.
@@ -53,6 +53,9 @@ static const bool kDebug = true;
 // Certain loops multiply this value by 4; take care that the multiply would
 // not overflow uint32.
 static const uint32_t kTimeout = 0x10000000U;
+// Some loops execute enough instructions between iterations that an equivalent
+// timeout to the above is a few orders of magnitude fewer cycles.
+static const uint32_t kTimeoutSB = kTimeout >> 4;
 
 
 //// REGISTER SETUP ////
@@ -83,6 +86,55 @@ uint32_t volatile * const GPIO_DATAIN =
 //// LOW-LEVEL I/O ////
 
 
+// Predeclarations.
+uint8_t _NormalCleanup(const bool& reassert_interrupt_from_arm);
+uint8_t _AbnormalCleanup(const bool& reassert_interrupt_from_arm);
+
+
+// Resets PRU0 to the idle state (where it awaits a new command).
+//
+// Per the recommended reset procedure described in aphd_pru0_datapump.asm,
+// repeatedly issues an invalid command to PRU0 until it receives an error
+// response that means "invalid command" (0x01).
+//
+// Will loop forever until it receives this response.
+inline void ResetDataPump() {
+  // Repeat forever until we get a 0x01 response from the PRU.
+  for (;;) {
+    // 1. Await PRU1 to PRU0 interrupt clear. Normally we wouldn't check this
+    // ourselves, but in the reset routine we don't know what state PRU0 is in,
+    // and we don't want to issue an interrupt until we know that PRU0 is ready
+    // for it. As long as the firmware is running, it should clear this
+    // interrupt in fairly short order.
+    while ((CT_INTC.SECR0 & (1 << ePRU1to0)) != 0);
+
+    // 2. Deliberately prepare an invalid command for the PRU. (Size and address
+    // fields don't matter for invalid commands.)
+    SHMEM.data_pump_command.return_code = 0xff;  // PRU0 should change this
+    SHMEM.data_pump_command.command = dINVALID;  // An invalid command code
+
+    // 3. Try to invoke the data pump.
+    CT_INTC.SICR = ePRU0to1;  // Clear PRU0 to PRU1 interrupt
+    __R31 = sPRU1to0;         // Wake up PRU0 with an interrupt
+
+    // 4. Wait for the data pump to get back to us.
+    for (;;) {
+      // If we got an interrupt...
+      if ((__R31 & (1U << iAnyToPRU1)) != 0) {
+        // ...clear it, and if it came from the ARM, handle it before you do
+        // that as well. But if it came from PRU0...
+        if (kImPru0 == handle_interrupt()) {
+          // ...then return if the return code is 0x01 ("invalid command")...
+          if (SHMEM.data_pump_command.return_code == 0x01) return;
+          // ...otherwise break and send another invalid command.
+          break;
+        }
+      }
+    }
+  }
+}
+
+
 // Commands PRU0 to send bytes with parity information over the data lines.
 //
 // StartSendBytesWithParity issues a command to PRU0 (the "data pump") to send
@@ -109,6 +161,10 @@ uint32_t volatile * const GPIO_DATAIN =
 //   size: Number of <data byte><parity byte> pairs to write to the data lines.
 inline void StartSendBytesWithParity(const volatile ByteParityPair* const addr,
                                      uint16_t size) {
+  // 0. We haven't told the data pump to do anything yet, so clear out any
+  // lingering interrupts without worrying about where they came from.
+  while ((__R31 & (1U << iAnyToPRU1)) != 0) handle_interrupt();
+
   // 1. Construct the data pump command in shared memory.
   SHMEM.data_pump_command.return_code = 0xff;  // PRU0 should change this
   SHMEM.data_pump_command.command = dWRITE;    // PRU0 should send data out
@@ -139,63 +195,84 @@ inline void StartSendBytesWithParity(const volatile ByteParityPair* const addr,
 // In order to perform PR/\W monitoring reliably, this function should be called
 // as soon as possible after StartSendBytesWithParity returns.
 //
+// Args:
+//   timeout: If nonzero, polls the control lines this many times before giving
+//       up, interrupting the transfer, and returning.
+//
 // Returns:
 //   0: Data transfer was successful.
-//   4: Transfer timed out waiting for \PSTRB to go low.
-//   5: Transfer timed out waiting for \PSTRB to go high.
-//   6: Transfer was interrupted prematurely.
-uint8_t WaitSendBytesWithParity() {
+//   4: Transfer interrupted waiting for \PSTRB to go low.
+//   5: Transfer interrupted waiting for \PSTRB to go high.
+uint8_t WaitSendBytesWithParity(uint32_t timeout = 0) {
   const register uint32_t ones = 0xffffffffU;  // In a register for fast copy
   register bool reassert_interrupt_from_arm = false;  // Also for speed
 
-  // 3a. Wait for the data pump to finish. If PR/\W goes low, select input mode
-  // for the data lines to avoid bus conflicts; normally, PRU0 will do this when
-  // it finishes.
-  for (;;) {
+  // 3a. Now wait for the data pump to finish. If PR/\W goes low, select input
+  // mode for the data lines to avoid bus conflicts; normally, PRU0 will do
+  // this when it finishes. Meanwhile, \PCMD may *start* low---rising edges are
+  // OK with us. There is hypothetically a *RACE* here: \PCMD could fall just
+  // prior to this point, though this would probably be an abnormal and unlucky
+  // situation if WaitSendBytesWithParity is called under ordinary conditions.
+  while ((__R31 & (1U << ppCMD)) == 0) {
+    // Decrement timeout counter where applicable.
+    if (timeout != 0) {
+      if (--timeout == 0) {
+        *GPIO_OE = ones;  // Data pins to input mode NOW!
+        return _AbnormalCleanup(reassert_interrupt_from_arm);
+      }
+    }
     // If the Apple lowers PR/\W, set data pins to input mode immediately! Then
     // send an interrupt to PRU0 to cancel the write.
     if ((__R31 & (1U << ppRW)) == 0) {
-      *GPIO_OE = ones;
-      __R31 = sPRU1to0;  // Hey PRU0: cancel the write!
-      break;
+      *GPIO_OE = ones;  // Data pins to input mode NOW!
+      return _AbnormalCleanup(reassert_interrupt_from_arm);
     }
     // If there is an interrupt, then if it's from the ARM, we'll clear it for
-    // now and deal with it later. Otherwise, we assume that it's from PRU0
-    // and we forge ahead. We should try not to get many interrupts from the ARM
-    // during this busy time, regardless.
+    // now and deal with it later (allowing us to keep monitoring the PR/\W
+    // lines closely. Otherwise, we assume that it's from PRU0 and we jump ahead
+    // to return. We should try not to get many interrupts from the ARM during
+    // this busy time, regardless---this could be a flaky solution.
     if ((__R31 & (1U << iAnyToPRU1)) != 0) {
       if ((CT_INTC.SECR0 & (1 << eARMtoPRU1)) != 0) {
         reassert_interrupt_from_arm = true;
         CT_INTC.SICR = eARMtoPRU1;
       } else {
-        break;  // Note: no clearing this interrupt yet because of 3b below.
+        // If here, data pins are already in input mode.
+        return _NormalCleanup(reassert_interrupt_from_arm);
       }
     }
   }
 
-  // 3b. Just in case we broke out of the last loop owing to PR/\W going low, we
-  // continue waiting for PRU0 or the ARM interrupts in the same way as before.
-  for (;;) {
+  // 3b. If \PCMD was originally high or if there was a rising edge, keep on
+  // waiting for the data pump to finish, as long as \PCMD stays high. We use
+  // the same logic from the previous loop.
+  while ((__R31 & (1U << ppCMD)) != 0) {
+    if (timeout != 0) {
+      if (--timeout == 0) {
+        *GPIO_OE = ones;
+        return _AbnormalCleanup(reassert_interrupt_from_arm);
+      }
+    }
+    if ((__R31 & (1U << ppRW)) == 0) {
+      *GPIO_OE = ones;
+      return _AbnormalCleanup(reassert_interrupt_from_arm);
+    }
     if ((__R31 & (1U << iAnyToPRU1)) != 0) {
       if ((CT_INTC.SECR0 & (1 << eARMtoPRU1)) != 0) {
         reassert_interrupt_from_arm = true;
         CT_INTC.SICR = eARMtoPRU1;
       } else {
-        break;  // Keep waiting, we'll clear ePRU0to1 soon enough.
+        return _NormalCleanup(reassert_interrupt_from_arm);
       }
     }
   }
 
-  // 4. Clear the interrupt from PRU0 at last. Re-assert the ARM interrupt if
-  // there was one, and then handle it.
-  CT_INTC.SICR = ePRU0to1;
-  if (reassert_interrupt_from_arm) {
-    __R31 = sARMtoPRU1;
-    handle_interrupt();
-  }
 
-  // 5. Return the return code from PRU0.
-  return SHMEM.data_pump_command.return_code;
+  // 4. But if we're here, \PCMD has fallen. We must cancel the data pump's
+  // current operation and wait for it to send us an interrupt to indicate that
+  // it's done. We
+  *GPIO_OE = ones;  // Set data pins to input mode as a precaution.
+  return _AbnormalCleanup(reassert_interrupt_from_arm);
 }
 
 
@@ -210,36 +287,55 @@ uint8_t WaitSendBytesWithParity() {
 //       that none of the data to write lives in the first eight bytes of the
 //       shared memory space.
 //   size: Number of <data byte><parity byte> pairs to write to the data lines.
+//   timeout: If nonzero, polls the control lines this many times before giving
+//       up, interrupting the transfer, and returning.
 //
 // Returns:
 //   0: Data transfer was successful.
-//   4: Transfer timed out waiting for \PSTRB to go low.
-//   5: Transfer timed out waiting for \PSTRB to go high.
-//   6: Transfer was interrupted prematurely.
+//   4: Transfer interrupted waiting for \PSTRB to go low.
+//   5: Transfer interrupted waiting for \PSTRB to go high.
 inline uint8_t SendBytesWithParity(const volatile ByteParityPair* const addr,
-                                   uint16_t size) {
+                                   uint16_t size, uint32_t timeout = 0) {
   StartSendBytesWithParity(addr, size);
-  return WaitSendBytesWithParity();
+  return WaitSendBytesWithParity(timeout);
 }
 
 
 // Commands PRU1 to receive bytes over the data lines.
 //
 // ReceiveBytes issues a command to PRU0 (the "data pump") to read data in from
-// the data lines, clocked externally by the \PSTRB line. The function waits for
-// PRU0 to complete the transfer (or time out).
+// the data lines, clocked externally by the \PSTRB line. The function normally
+// waits for PRU0 to complete the transfer, but it will terminate prematurely
+// with a nonzero return code on a \PCMD falling edge.
+//
+// (As an example case where this precaution might be relevant: imagine that
+// the Apple crashes halfway through clocking in bytes to write to the disk.
+// \PCMD may remain high throughout the Apple's reboot process, but the Apple
+// is unlikely to resume the transaction where it left off. When it is finally
+// ready to talk to the disk again, it will lower \PCMD to initiate a new
+// command, and that's the rising edge that causes us abort the data pump's read
+// operation.)
 //
 // Args:
 //   addr: Starting address for the memory region receiving bytes from the data
 //       lines. This address should be in PRU0's address space.
-//   size: Number of bytes to read from the data lines.
+//   size: Number of bytes to read from the data lines; should be above 0.
+//   timeout: If nonzero, polls the control lines this many times before giving
+//       up, interrupting the transfer, and returning.
 //
 // Returns:
 //   0: Data transfer was successful.
-//   2: Transfer timed out waiting for \PSTRB to go low.
-//   3: Transfer timed out waiting for \PSTRB to go high.
-inline uint8_t ReceiveBytes(volatile uint8_t* const addr,
-                            uint16_t size) {
+//   2: Transfer interrupted waiting for \PSTRB to go low.
+//   3: Transfer interrupted waiting for \PSTRB to go high.
+uint8_t ReceiveBytes(volatile uint8_t* const addr, uint16_t size,
+                     uint32_t timeout = 0) {
+  // A useful alias.
+  volatile uint8_t* const return_code = &SHMEM.data_pump_command.return_code;
+
+  // 0. We haven't told the data pump to do anything yet, so clear out any
+  // lingering interrupts without worrying about where they came from.
+  while ((__R31 & (1U << iAnyToPRU1)) != 0) handle_interrupt();
+
   // 1. Construct the data pump command.
   SHMEM.data_pump_command.return_code = 0xff;  // PRU0 should change this
   SHMEM.data_pump_command.command = dREAD;     // PRU0 should read data in
@@ -250,20 +346,93 @@ inline uint8_t ReceiveBytes(volatile uint8_t* const addr,
   CT_INTC.SICR = ePRU0to1;  // Clear PRU0 to PRU1 interrupt
   __R31 = sPRU1to0;         // Wake up PRU0 with an interrupt
 
-  // 3. Wait for the data pump to finish.
-  for (;;) {
+  // 3a. Now wait for the data pump to finish. \PCMD may *start* low---rising
+  // edges are OK with us. There is hypothetically a *RACE* here: \PCMD could
+  // fall just prior to this point, though this would probably be an abnormal
+  // and unlucky situation if ReceiveBytes is called under ordinary conditions.
+  while ((__R31 & (1U << ppCMD)) == 0) {
+    // Decrement timeout counter where applicable.
+    if (timeout != 0) {
+      if (--timeout == 0) return _AbnormalCleanup(false);
+    }
     // If we got an interrupt...
     if ((__R31 & (1U << iAnyToPRU1)) != 0) {
       // ...and if it came from PRU0, then break. If it came from the ARM, the
       // interrupt handler will just do whatever data transfer thing the ARM
       // needed to do. Either way, the PRU0 to PRU1 interrupt will be cleared
       // upon breaking out of the loop.
-      if (kImPru0 == handle_interrupt()) break;
+      if (kImPru0 == handle_interrupt()) return *return_code;
     }
   }
 
-  // 4. Return the return code from PRU0.
+  // 3b. If \PCMD was originally high or if there was a rising edge, keep on
+  // waiting for the data pump to finish, as long as \PCMD stays high. We use
+  // the same logic from the previous loop.
+  while ((__R31 & (1U << ppCMD)) != 0) {
+    if (timeout != 0) {
+      if (--timeout == 0) return _AbnormalCleanup(false);
+    }
+    if ((__R31 & (1U << iAnyToPRU1)) != 0) {
+      if (kImPru0 == handle_interrupt()) return *return_code;
+    }
+  }
+
+  // 4. But if we're here, \PCMD has fallen. We must cancel the data pump's
+  // current operation and wait for it to send us an interrupt to indicate that
+  // it's done.
+  return _AbnormalCleanup(false);
+}
+
+
+// Helper for ReceiveBytes, WaitSendBytesWithParity: handle "normal" cleanup.
+//
+// Call only after PRU0 has issued an interrupt indicating that the transfer
+// is complete!
+//
+// Args:
+//   reassert_interrupt_from_arm: If set, the caller has deferred an interrupt
+//       from the ARM, and this routine should reassert this interrupt and
+//       then handle it. The caller should endeavour not to allow more than one
+//       interrupt from the ARM to be deferred; only one interrupt can be
+//       handled in this way.
+//
+// Returns:
+//   See return details at ReceiveBytes or WaitSendBytesWithParity, depending on
+//   who the caller was.
+inline uint8_t _NormalCleanup(const bool& reassert_interrupt_from_arm) {
+  if(reassert_interrupt_from_arm) {
+    __R31 = sARMtoPRU1;
+    handle_interrupt();
+  }
   return SHMEM.data_pump_command.return_code;
+}
+
+
+// Helper for ReceiveBytes, WaitSendBytesWithParity: handle "abnormal" cleanup.
+//
+// Issues an interrupt to PRU0 to terminate a data transfer operation in
+// progress, then awaits an interrupt from PRU0 signalling that termination has
+// occurred and that PRU0 has returned to the idle state.
+//
+// Args:
+//   reassert_interrupt_from_arm: If set, the caller has deferred an interrupt
+//       from the ARM, and this routine should reassert this interrupt and
+//       then handle it. The caller should endeavour not to allow more than one
+//       interrupt from the ARM to be deferred; only one interrupt can be
+//       handled in this way.
+//
+// Returns:
+//   See return details at ReceiveBytes or WaitSendBytesWithParity, depending on
+//   who the caller was.
+inline uint8_t _AbnormalCleanup(const bool& reassert_interrupt_from_arm) {
+  __R31 = sPRU1to0;  // Trigger an interrupt of PRU0.
+  for (;;) {
+    if ((__R31 & (1U << iAnyToPRU1)) != 0) {  // Await the PRU0 response...
+      if (kImPru0 == handle_interrupt()) { //...and here it is.
+        return _NormalCleanup(reassert_interrupt_from_arm);
+      }
+    }
+  }
 }
 
 
@@ -331,7 +500,7 @@ void state_machine_idle() {
 
   // State 1b: Emit $01 to bus.
                                  if (kDebug) SHMEM.control_debug_word = 0x0101;
-  if (SendBytesWithParity(&SHMEM.bytes_with_parity[1], 1U)) return;
+  if (SendBytesWithParity(&SHMEM.bytes_with_parity[1], 1U, kTimeoutSB)) return;
 
   // State 2: Await \PCMD high; when it is, PR/\W must already be low.
   //          Attempt to snoop $55 handshake byte from the bus.
@@ -387,7 +556,7 @@ void state_machine_read() {
                                  if (kDebug) SHMEM.control_debug_word = 0x1100;
   StartSendBytesWithParity(&SHMEM.bytes_with_parity[2], 1U);
   __asm(" CLR r30," psBSY);
-  if (WaitSendBytesWithParity()) return;  // Back to state machine start.
+  if (WaitSendBytesWithParity(kTimeoutSB)) return;  // Goto state machine start.
 
   // State R2a: Await \PCMD high and PR/\W low.
   //            Attempt to snoop $55 handshake byte from the bus.
@@ -470,7 +639,7 @@ void state_machine_write(const uint8_t command) {
                                  if (kDebug) SHMEM.control_debug_word = 0x2100;
   StartSendBytesWithParity(&SHMEM.bytes_with_parity[command + 2U], 1U);
   __asm(" CLR r30," psBSY);
-  if (WaitSendBytesWithParity()) return;  // Back to state machine start.
+  if (WaitSendBytesWithParity(kTimeoutSB)) return;  // Goto state machine start.
 
   // State W2: Await \PCMD high and PR/\W low.
   //           Attempt to snoop $55 handshake byte from the bus.
@@ -499,7 +668,7 @@ void state_machine_write(const uint8_t command) {
                                  if (kDebug) SHMEM.control_debug_word = 0x2500;
   StartSendBytesWithParity(&SHMEM.bytes_with_parity[6], 1U);
   __asm(" CLR r30," psBSY);
-  if (WaitSendBytesWithParity()) return;  // Back to state machine start.
+  if (WaitSendBytesWithParity(kTimeoutSB)) return;  // Goto state machine start.
 
   // State W6a: Await \PCMD high and PR/\W low.
   //            Attempt to snoop $55 handshake byte from the bus.
@@ -563,6 +732,7 @@ void main(void) {
   // Setup.
   CT_CFG.SYSCFG_bit.STANDBY_INIT = 0;  // Enable OCP master port
   aphd_pru1_rpmsg_init();  // Initialise RPMsg system
+  ResetDataPump();  // Force data pump into a known state
 
   // Main loop.
   for (;;) state_machine_idle();

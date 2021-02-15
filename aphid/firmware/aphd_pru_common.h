@@ -86,8 +86,9 @@
 //// DATA PUMP COMMANDS ////
 ///////////////////////// */
 
-#define dREAD  0x00  /* Read a block of data from the data lines */
-#define dWRITE 0x01  /* Write a block of data to the data lines */
+#define dREAD    0x00  /* Read a block of data from the data lines */
+#define dWRITE   0x01  /* Write a block of data to the data lines */
+#define dINVALID 0x80  /* An intentional nonsense command, used for resets */
 
 
 #endif  /* APHD_PRU_COMMON_H_ */

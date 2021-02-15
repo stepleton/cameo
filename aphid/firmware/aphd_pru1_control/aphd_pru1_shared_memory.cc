@@ -14,7 +14,12 @@
 // word. The other elements are basically left uninitialised.
 #pragma DATA_SECTION(".shmem")
 volatile __far SharedMemory SHMEM = {
-    /* data_pump_command: */ {},
+    /* data_pump_command: */ {
+      /* return_code: */ 0xff,
+      /* command (invalid on purpose): */ 0x80,
+      /* size */ 0x0,
+      /* address */ 0x0,
+    },
     /* data_pump_statistics: */ {},
     /* apple_handshake: */ {},
     /* apple_command: */ {},

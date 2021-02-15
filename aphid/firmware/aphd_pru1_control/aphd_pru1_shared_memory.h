@@ -11,18 +11,18 @@
 #include <stdint.h>
 
 
-// The data pump command structure sits at the base of the shared memory
-// region. PRU 1 can invoke the data pump (i.e. PRU 0) by placing values in
-// this structure and sending PRU 0 an interrupt. PRU 0 will perform the
-// operation, deposit a return value in the return_code field, and send an
-// interrupt back to PRU 1. This mechanism is automated by functions in the
-// "LOW LEVEL I/O" section below.
+// The data pump command structure sits at the base of the shared memory region.
+// PRU 1 can invoke the data pump (i.e. PRU 0) by placing values in this
+// structure and sending PRU 0 an interrupt. PRU 0 will perform the operation,
+// deposit a return value in the return_code field, and send an interrupt
+// back to PRU 1. This invocation mechanism is automated by functions in the
+// "LOW LEVEL I/O" section of aphd_pru1_control.cc.
 //
-// Note: for details on .command values of 0xff, see documentation for WRITE
+// Note: for details on .command values besides 0x00 and 0x01, see documentation
 // in aphd_pru0_datapump/aphd_pru0_datapump.asm.
 struct __attribute__((packed)) DataPumpCommand {
   uint8_t return_code;  // Return code for the data pump operation
-  uint8_t command;      // Command: 0x0: read, 0x1: write, 0xff: see above
+  uint8_t command;      // Command: 0x0: read, 0x1: write, other: see above
   uint16_t size;        // Number of bytes/words affected by the operation
   uint32_t address;     // Location of bytes/words affected by the operation
 };
