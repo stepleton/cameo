@@ -57,15 +57,8 @@ UiScreensaverWaitForKb:
     ;   Trashes D0-D1/A0-A1
 UiScreensaver:
     MOVEM.L D2-D6/A2,-(SP)       ; Save registers we use
-    ; Initialise the bottom row of the display
-    MOVEA.L zLisaConsoleScreenBase(PC),A0  ; Start of the display buffer into A0
-    ADDA.W  #$7F9E,A0            ; Advance to the bottom line of the screen
-    MOVEQ.L #$2C,D1              ; Prepare to clear 45 words
-.cl CLR.W   (A0)+                ; Clear this word, advance the pointer
-    DBRA    D1,.cl               ; Loop to clear the next word
-    ADDQ.B  #$1,-46(A0)          ; Make the very tip of the Rule 30 pyramid
 
-    ; At least hint that the Lisa isn't glitching out
+    ; Hint that the Lisa isn't glitching out
     mUiGotoRc   #$23,#$10        ; Jump to the bottom of the screen
     mUiPrint  <'[Screensaver]'>  ; Note no descenders to interfere with the FA
 
@@ -73,6 +66,15 @@ UiScreensaver:
     MOVE.L  #$1E1E1E1E,D3        ; Repeated Rule 30 bitmap for BTST lookups
     LEA.L   zLisaConsoleKbCode(PC),A2   ; Point A2 at the last raw keycode
     MOVE.W  $1BE,D6              ; Seed RNG with bits from the boot time
+
+    ; Initialise the bottom row of the display --- plus the last word of the row
+    ; before that
+.in MOVEA.L zLisaConsoleScreenBase(PC),A0  ; Start of the display buffer into A0
+    ADDA.W  #$7F9C,A0            ; Advance to bottom line of the screen (almost)
+    MOVEQ.L #$2D,D1              ; Prepare to clear 46 words
+.cl CLR.W   (A0)+                ; Clear this word, advance the pointer
+    DBRA    D1,.cl               ; Loop to clear the next word
+    ADDQ.B  #$1,-46(A0)          ; Make the very tip of the Rule 30 pyramid
 
     ; Scroll the entire display up one pixel; leave bottom row unchanged
     ; This is the top of the outermost loop
@@ -141,7 +143,25 @@ UiScreensaver:
     BMI.S   .kp                  ; If X had been set, we need to poll again
     TST.B   (A2)                 ; Did we get a key event from the COPS?
     BLE.S   .lo                  ; No, or it was a keydown, so one more round
-    
+
+    ; If the key-up was the Backspace key, then it's an easter egg: XOR the
+    ; lower word of the Rule 30 bitmap in D3 with LFSR state, rotate it one bit
+    ; left, and start all over; note that this results in an automaton that's
+    ; different to an elementary cellular automaton, since a bits value depends
+    ; on the value of itself, its right neighbour, and its *3* left neighbours.
+    CMPI.B  #$45,(A2)            ; Was it key-up on the Backspace key?
+    BNE.S   .rt                  ; No, jump to return to the caller
+    EOR.W   D6,D3                ; XOR the LFSR state with the bitmap lower half
+    ROL.L   #$1,D3               ; Rotate the bitmap one bit left.
+
+    ; Photosensitivity guard! Any D3 bitmap where the MSBit is 0 and the LSBit
+    ; is 1 will make a pattern with a rapidly alternating black and white lines,
+    ; and since this produces a flickering image that could be hazardous to some
+    ; users, we edit the bitmap to make this condition impossible
+    BMI     .in                  ; If MSBit is 1, safe to start the pattern
+    BCLR.L  #$0,D3               ; Otherwise we force the LSBit to be 0
+    BRA     .in                  ; And then restart the pattern
+
     ; Got a key-up, so return to the caller
-    MOVEM.L (SP)+,D2-D6/A2       ; Restore registers we use
+.rt MOVEM.L (SP)+,D2-D6/A2       ; Restore registers we use
     RTS

@@ -64,8 +64,14 @@ Operations:
        a null-terminated destination filename immediately following. There must
        be no existing file at the destination.
 
-     - 'mk': create a new disk image. The only parameter is a null-terminated
-       filename for the new image. There must be no existing file by that name.
+     - 'mk': create a new 5 MB ProFile disk image. The only parameter is a
+       null-terminated filename for the new image. There must be no existing
+       file by that name.
+
+     - 'mx': "make extended": create a new disk image of arbitrary size.
+       Parameters are a null-terminated numeric size string and a
+       null-terminated filename for the new image immediately following. There
+       must be no existing file by that name.
 
      - 'rm': remove a file. The only parameter is the null-terminated name of
        the file to remove.
@@ -97,7 +103,9 @@ These filenames will be truncated, which may have unexpected side effects!
 """
 
 import logging
+import os
 import pathlib
+import shutil
 import time
 
 from typing import Callable, Iterable, Optional, Sequence, Tuple
@@ -105,7 +113,7 @@ from typing import Callable, Iterable, Optional, Sequence, Tuple
 import profile_plugins
 
 
-IMAGE_SIZE = 5175296  # Hard drive image size in bytes.
+IMAGE_SIZE = 5175296  # 5 MB ProFile hard drive image size in bytes.
 
 PROFILE_READ = 0x00   # The ProFile protocol op byte that means "read a block"
 
@@ -129,6 +137,7 @@ PROTECTED_FILES = (
 _COMMAND_COPY = int.from_bytes(b'cp', byteorder='big')  # Copy a file
 _COMMAND_MOVE = int.from_bytes(b'mv', byteorder='big')  # Rename a file
 _COMMAND_CREATE = int.from_bytes(b'mk', byteorder='big')  # Create a new image
+_COMMAND_CREATE_EX = int.from_bytes(b'mx', byteorder='big')  # New image w/size
 _COMMAND_DELETE = int.from_bytes(b'rm', byteorder='big')  # Delete a file
 _COMMAND_SET_SUFFIX = int.from_bytes(b'sx', byteorder='big')  # Change suffix
 
@@ -258,7 +267,8 @@ class FilesystemOpsPlugin(profile_plugins.Plugin):
           args,
           [suffix_ok, _cwa_file_exists],
           [suffix_ok, _cwa_does_not_exist, _cwa_name_ok, can_touch]):
-        pathlib.Path(args[1]).write_bytes(pathlib.Path(args[0]).read_bytes())
+        if _have_room(pathlib.Path(args[0]).stat().st_size):
+          shutil.copyfile(args[0], args[1])
 
     elif command == _COMMAND_MOVE:             # Rename a file
       if _check_filesystem_op_args(
@@ -271,7 +281,15 @@ class FilesystemOpsPlugin(profile_plugins.Plugin):
       if _check_filesystem_op_args(
           args,
           [suffix_ok, _cwa_does_not_exist, _cwa_name_ok, can_touch]):
-        pathlib.Path(args[0]).write_bytes(bytes(IMAGE_SIZE))
+        if _have_room(IMAGE_SIZE):
+          with open(args[0], 'xb') as f: f.truncate(IMAGE_SIZE)
+
+    elif command == _COMMAND_CREATE_EX:        # Create a file of specified size
+      if args[0].isnumeric() and _check_filesystem_op_args(
+          args[1:],
+          [suffix_ok, _cwa_does_not_exist, _cwa_name_ok, can_touch]):
+        if _have_room(int(args[0])):
+          with open(args[0], 'xb') as f: f.truncate(int(args[0]))
 
     elif command == _COMMAND_DELETE:           # Delete a file
       if _check_filesystem_op_args(
@@ -340,6 +358,12 @@ _cwa_file_exists = lambda p: p.exists() and p.is_file()  # Is a file that exists
 _cwa_does_not_exist = lambda p: not p.exists()  # Nothing has that filename
 _cwa_name_ok = lambda p: (p.name.isprintable() and '/' not in p.name  # Filename
                           and len(p.name.encode('utf-8')) <= 255)     # validity
+
+
+def _have_room(image_size: int) -> bool:
+  """Helper: is there room for a file of size `image_size` on this volume?"""
+  st_statvfs = os.statvfs('.')
+  return image_size <= (st_statvfs.f_bsize * st_statvfs.f_bavail)
 
 
 # By calling plugin() within this module, the plugin service instantiates a

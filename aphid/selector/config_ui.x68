@@ -487,6 +487,8 @@ DoSysInfo:
     LEA.L   kCuiIDays(A2,D0.W),A3  ; Load the calculated start of Days into A3
     mUiPrintStrN  D1,A3            ; And print the Days
 
+    mUiClearBox   #$22,#$4A,#$1,#$10   ; Some partial right-edge line clearing
+
     mUiPrint  <'d '>
     LEA.L   kCuiIHours(A2),A3      ; We ran this many hours
     mUiPrintStrN  #$2,A3
@@ -497,19 +499,20 @@ DoSysInfo:
     ADDQ.L  #$2,A3                 ; We ran this many seconds
     mUiPrintStrN  #$2,A3
     mUiPrint  <', load average '>
-    PEA.L   kCuiILoad1(A2)         ; Our 1-minute load average
-    mUiPrint  s
+    LEA.L   kCuiILoad1(A2),A3      ; Our 1-minute load average
+    mUiPrintStrN  #$6,A3
     BSR     .cs
-    PEA.L   kCuiILoad5(A2)         ; Our 5-minute load average
-    mUiPrint  s
+    ADDQ.L  #$7,A3                 ; Our 5-minute load average
+    mUiPrintStrN  #$6,A3
     BSR     .cs
-    PEA.L   kCuiILoad15(A2)        ; Our 15-minute load average
-    mUiPrint  s,<', processes '>
-    PEA.L   kCuiIProcT(A2)         ; Number of total processes
-    mUiPrint  s
+    ADDQ.L  #$7,A3                 ; Our 15-minute load average
+    mUiPrintStrN  #$6,A3
+    mUiPrint  <', processes '>
+    ADDA.W  #$C,A3                 ; Number of total processes
+    mUiPrintStrN  #$4,A3
     BSR     .cl
-    PEA.L   kCuiIProcR(A2)         ; Number of running processes
-    mUiPrint  s,<'      '>         ; Spaces in lieu of clearing the full line
+    SUBQ.L  #$5,A3                 ; Number of running processes
+    mUiPrintStrN  #$4,A3
 
     ; Continue by printing the filesystem size
     mUiGotoRC   #$3,#$39           ; Where we print the filesystem size

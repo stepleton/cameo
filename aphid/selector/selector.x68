@@ -32,7 +32,7 @@
 
     ; Set this flag to 0 if and only if it will be loaded and executed by the
     ; "stepleton_hd" bootloader; otherwise, set to 1 (see comments in MAIN)
-fStandalone EQU 0
+fStandalone EQU 1
 
 
 * Preamble --------------------------------------
@@ -56,7 +56,7 @@ kSecC_Start EQU $800             ; The bootloader loads code to $800
     ; We manually trim these sizes down to the smallest values that won't result
     ; in more than one byte being assigned to the same memory location (the
     ; telltale sign of which is an error message from srec_cat).
-kSecC_SSize EQU $328A            ; The size of all code if fStandalone=0
+kSecC_SSize EQU $32BA            ; The size of all code if fStandalone=0
 kSecC_PSize EQU $1F6             ; Additional code size if fStandalone=1
 kSecD_Size  EQU $1160            ; The size of the kSecData section
 kSecS_Size  EQU $26A             ; The size of the kSecScratch section
@@ -288,7 +288,7 @@ _AnyKeyDelay:
 
 
 sVersion:
-    DC.B    '0.7',$00
+    DC.B    '0.8',$00
 
 
 * Scratch data ----------------------------------
