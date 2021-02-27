@@ -21,6 +21,7 @@ may do the following:
 
 2. On a modern computer, copy these files into the microSD card's FAT
    partition (called `CAMEO_APHID`): `profile.py`,
+   `profile_plugin_FFFEFC_selector_rescue.py`,
    `profile_plugin_FFFEFD_system_info.py`,
    `profile_plugin_FFFEFE_filesystem_ops.py`,
    `profile_plugin_FFFEFF_key_value_store.py`, and `profile_plugins.py`. Note

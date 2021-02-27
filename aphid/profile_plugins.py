@@ -44,6 +44,9 @@ import threading
 from typing import Dict, Generator, Optional
 
 
+SECTOR_SIZE = 532  # Sector size in bytes. Cf. "block size" in spare tables.
+
+
 class Plugin(abc.ABC):
   """Cameo/Aphid "magic block" plugin abstract base class.
 
@@ -241,3 +244,35 @@ def plugins(directory: str = '.') -> Generator[Dict[int, Plugin], None, None]:
         plugin.close()
       except Exception:
         logging.exception('While closing the plugin for block $%06X:', block)
+
+
+class Conclusion(Exception):
+  """An exception that concludes the current emulation session.
+
+  A plugin that raises this exception in its __call__ method will cause the
+  current emulation session to end, with the "conclusion" to the session being
+  the result of truncating or zero-padding the `conclusion` bytes argument to
+  the constructor to exactly 532 bytes.
+
+  Study `process_conclusion` in `profile.py` to learn more about how data in
+  these conclusions are interpreted by the emulator.
+
+  The 532-byte read data provided to the Apple if a Conclusion is raised during
+  a read is not specified. Cameo/Aphid may also not do anything at all with
+  data it receives during a write operation that raises a Conclusion.
+
+  Attributes:
+    conclusion: A 532-byte value indicating what should happen when the current
+        emulation session is ended.
+  """
+  conclusion: bytes
+
+  def __init__(self, conclusion: bytes) -> None:
+    """Initialise a Conclusion exception.
+
+    Args:
+      message: 
+    """
+    super().__init__()
+    self.conclusion = (
+        conclusion[:SECTOR_SIZE] + bytes(max(0, SECTOR_SIZE - len(conclusion))))

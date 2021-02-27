@@ -27,6 +27,7 @@ install:
 	$(MAKE) -C firmware install
 	mkdir -p $(INSTALL_DIR)
 	install --mode=775 profile.py $(INSTALL_DIR)
+	install --mode=664 profile_plugin_FFFEFC_selector_rescue.py $(INSTALL_DIR)
 	install --mode=664 profile_plugin_FFFEFD_system_info.py $(INSTALL_DIR)
 	install --mode=664 profile_plugin_FFFEFE_filesystem_ops.py $(INSTALL_DIR)
 	install --mode=664 profile_plugin_FFFEFF_key_value_store.py $(INSTALL_DIR)

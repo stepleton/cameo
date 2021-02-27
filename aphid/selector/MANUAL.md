@@ -23,6 +23,7 @@ automatically select and boot from one of the images.
   - [A working keyboard is needed for interactive use](#a-working-keyboard-is-needed-for-interactive-use)
   - [Accessibility](#accessibility)
   - [Screensaver](#screensaver)
+* [Oops, I damaged or deleted the Selector](#oops-i-damaged-or-deleted-the-selector)
 * [Main interactive interface and menu options](#main-interactive-interface-and-menu-options)
   - [B(oot and S(elect](#boot-and-select)
   - [N(ew](#new)
@@ -98,6 +99,82 @@ The screensaver's scrolling texture is based on the [Rule 30](
 https://en.wikipedia.org/wiki/Rule_30) elementary finite automaton, which was
 discovered around the time the Lisa was developed. It expands from a single
 pixel and widens to stretch across the screen.
+
+
+## Oops, I damaged or deleted the Selector
+
+Even though it's used to select and manage hard drive image files, the Selector
+program itself is also loaded from an ordinary image file. This file is usually
+`profile.image`, the drive image that the emulator uses by default when it is
+powered on. There is nothing special about this drive image, and so it's
+possible to overwrite or damage the Selector program data by doing relatively
+ordinary things to a Cameo/Aphid, like installing an operating system or
+initialising a filesystem ("formatting the drive", "erasing the disk").
+
+If you find that you have damaged or modified your Selector hard drive image
+and you wish to restore it, there are a few things you can do.
+
+#### Restoring the Selector with a modern computer
+
+1. Download [selector.image.zip](selector.image.zip) onto a modern computer
+   and unzip it, giving you the replacement Selector drive image file
+   `selector.image`.
+
+2. With the Cameo/Aphid off, remove the microSD card and plug it into the
+   modern computer. Find and open the microSD card partition called
+   `CAMEO_APHID`.  If you don't want to lose the hard drive image that you
+   modified by accident, you can use it under a different name: just rename
+   `profile.image` to something else that ends in `.image`.
+
+3. Rename the `selector.image` file you unzipped in step 1 to `profile.image`
+   and copy it onto the `CAMEO_APHID` partition.
+
+4. Eject the microSD card from your computer and plug it back into the
+   Cameo/Aphid, which is now ready to be used as normal.
+
+#### Restoring the Selector with your Apple Lisa
+
+**This procedure will only work if the Cameo/Aphid is attached to the Lisa's
+built-in parallel port.** This is the port next to the mouse connector on Lisa
+1 and Lisa 2/5 systems, or the Widget ribbon cable inside Lisa 2/10 systems.
+
+1. Reboot the Lisa into Service Mode. If you're not sure how to do this,
+   [refer here for instructions](
+   https://lisafaq.sunder.net/lisafaq-hw-rom_servicemode.html).
+
+2. Type in the following two lines to enter a short program into the Lisa's
+   memory:
+
+   ```
+   2900 223C 00FF FEFC 227C 00FE 0090 50C2 50C3↵
+   2910 50C4 4ED1↵
+   ```
+
+   where `↵` means to press the Return or ↵ key. You must include all of the
+   spaces shown. Note that the `2` at the start of each line will not appear
+   on the screen: it selects the "SET MEMORY" function from the "SERVICE MODE"
+   menu.
+
+3. To check that you've entered the program correctly, type `1900 20↵`.
+   Verify that the screen displays something like the following:
+
+   ```
+   223C 00FF FEFC 227C 00FE 0090 50C2 50C3
+   50C4 4ED1 xxxx xxxx xxxx xxxx xxxx xxxx
+   ```
+
+   where it doesn't matter what is displayed at the locations marked with
+   `xxxx`; that is, only the first two words of the second line matter. If
+   you see anything that doesn't match, go back to Step 2 and continue from
+   there.
+
+4. Finally, execute the program by typing `3900↵`.
+
+The Lisa should appear to restart immediately, and if it starts up from the
+internal port, it should load the Selector. You should observe that the drive
+image that was previously called `profile.image` will have been renamed
+`profile.backup-0.image`, or if there was already a file by that name,
+`profile.backup-1.image`, and so on.
 
 
 ## Main interactive interface and menu options
@@ -325,7 +402,7 @@ deletion command to the Cameo/Aphid.
 Even if these steps complete successfully, the Cameo/Aphid may refuse to
 delete the drive image for one reason or another: for example, it won't delete
 the image file called `profile.image`, since this is the drive image that the
-emulator used by default when it is powered on. (Usually this drive image
+emulator uses by default when it is powered on. (Usually this drive image
 contains the Selector itself.) Browse the drive image catalogue to be certain
 that the hard drive image has been deleted.
 
@@ -721,3 +798,5 @@ image selector without the help of the following people and resources:
 24 January 2021: 0.6 release, adding the S(elect command. (Tom Stepleton)
 
 30 January 2021: 0.7 release, adding a screensaver. (Tom Stepleton)
+
+16 February 2021: 0.8 release, status printing bugfix. (Tom Stepleton)

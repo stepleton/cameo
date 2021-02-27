@@ -900,7 +900,11 @@ def profile(
         elif sector == 0xfffffe:  # Get the last data read or written
           data = last_data
         elif 0xff0000 <= sector < 0xffff00 and sector in plugins:  # Plugin call
-          data = plugins[sector](op, sector, retry_count, sparing_thresh, None)  # type: ignore
+          try:
+            data = plugins[sector](
+                op, sector, retry_count, sparing_thresh, None)  # type: ignore
+          except profile_plugins.Conclusion as e:   # Conclude if plugin says so
+            data = conclusion = e.conclusion
           if len(data) != SECTOR_SIZE:                     # Enforce proper size
             data = data[:SECTOR_SIZE] + bytes(max(0, SECTOR_SIZE - len(data)))
         else:                     # Get a sector from the disk image
@@ -916,7 +920,10 @@ def profile(
             sparing_thresh == 0xaf):  # (That's 175.) IDEFile "magic numbers"
           conclusion = data
         elif 0xff0000 <= sector < 0xffff00 and sector in plugins:  # Plugin call
-          _ = plugins[sector](op, sector, retry_count, sparing_thresh, data)
+          try:
+            _ = plugins[sector](op, sector, retry_count, sparing_thresh, data)
+          except profile_plugins.Conclusion as e:   # Conclude if plugin says so
+            conclusion = e.conclusion
         else:                            # Just write this sector normally
           image_put_sector(image, sector, data, flusher)  # Stow in the disk img
 
@@ -945,7 +952,8 @@ def process_conclusion(
 
   An emulator session's _conclusion_ is the 532 bytes of sector data that the
   Apple supplied along with its command to end the emulation session (see the
-  `profile` docstring). The main program uses this helper to parse this
+  `profile` docstring), or that a plugin placed in a profile_plugins.Conclusion
+  exception that it raised. The main program uses this helper to parse this
   conclusion and perform any state changes that might be directed by its
   contents.
 
