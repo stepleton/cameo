@@ -184,16 +184,16 @@ like this:
 
 ```
 
- [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.7]
+ [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.9]
 
   Filename                                                    1,234,567,890 bytes free
  --------------------------------------------------------------------------------------
-  Hard_drive_image_01.image
-  Hard_drive_image_02.image
-  Hard_drive_image_03.image
-  Hard_drive_images_can_have_arbitrary_names.image
-  Hence_these_filenames_are_just_examples.image
-  profile.image
+  Hard_drive_image_01.image                                                        10M
+  Hard_drive_image_02.image                                                         5M
+  Hard_drive_image_03.image                                                       256M
+  Hard_drive_images_can_have_arbitrary_names.image                                 32M
+  Hence_these_filenames_are_just_examples.image                                     5M
+  profile.image                                                                     5M
 
 
 
@@ -229,11 +229,11 @@ keypad to move the selection up and down respectively.
 
 The top of the screen shows a partial menu of keyboard commands:
 ```
- [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.7]
+ [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.9]
 ```
 The bracket `(` indicates that the first letter of the command activates the
 command, thus the `C` key will start the Copy command. Also shown here are the
-version number of the Selector software (the `0.7` in square brackets at right)
+version number of the Selector software (the `0.9` in square brackets at right)
 and the "moniker" for this Cameo/Aphid (the `No Name` in square brackets at
 left). A moniker is a name given to a Cameo/Aphid for identification purposes:
 more precisely, it's a name given to a microSD card containing an installation
@@ -566,7 +566,7 @@ screen prior to booting from the designated hard drive image:
 ```
 
  [Cameo/Aphid]
- Hard drive image manager v0.7
+ Hard drive image manager v0.9
  Connecting to the boot drive: the built-in parallel port... OK
  Loading configuration into the key/value cache... OK
  Reading configuration... OK
