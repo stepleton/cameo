@@ -815,4 +815,4 @@ image selector without the help of the following people and resources:
 
 16 February 2021: 0.8 release, status printing bugfix. (Tom Stepleton)
 
-29 February 2021: 0.9 release, image creation size option. (Tom Stepleton)
+28 February 2021: 0.9 release, image creation size option. (Tom Stepleton)
