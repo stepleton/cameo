@@ -174,8 +174,10 @@ StrNCmp:
     ;   SP+$4: l. Address of the string to copy to
     ; Notes:
     ;   Copies byte-wise---could be faster I guess
-    ;   String source and destination must not overlap, but it's okay if they're
-    ;       identical
+    ;   String source and destination must not overlap in a way where the
+    ;       destination address comes after the source address, but it's okay if
+    ;       the destination address precedes the source address or if they're
+    ;       both the same
     ;   Sets Z iff the string to copy was 255 or fewer characters long (not
     ;       counting the null terminator), or if the two addresses were the same
     ;   Longer strings are truncated at the destination

@@ -25,7 +25,9 @@ Operations:
 
          Bytes   6-19: YYYYMMDDHHMMSS ASCII last-modified time for the file
          Bytes  20-29: 10-character ASCII right-justified space-padded file size
-         Bytes 30-275: Reserved, unused for now
+         Bytes  30-33: 4-character ASCII right-justified "human readable" file
+                       size (e.g. ' 10M', '256M', '400K', '  7G')
+         Bytes 34-275: Reserved, unused for now
          Bytes 276-??: Filename (length varies---up to 255 characters long)
 
             Remainder: $00 bytes, so the filename is null-terminated.
@@ -222,6 +224,7 @@ class FilesystemOpsPlugin(profile_plugins.Plugin):
       # The Apple is reading past the end of the files array, unfortunately.
       file_mtime_text = b'19700101000000'
       file_size_text = b'         0'
+      file_human_size_text = b'   0'
       file_name_text = b''
     else:
       # The Apple is interested in a perfectly legitimate file :-)
@@ -231,6 +234,7 @@ class FilesystemOpsPlugin(profile_plugins.Plugin):
           time.strftime('%Y%m%d%H%M%S', time.gmtime(stat.st_mtime)),
           encoding=_CODEC)
       file_size_text = bytes('{:10d}'.format(stat.st_size), encoding=_CODEC)
+      file_human_size_text = _human_readable_size(stat.st_size)
       file_name_text = bytes(entry.name, encoding=_CODEC)
 
     # Assemble and return the file information record.
@@ -239,7 +243,8 @@ class FilesystemOpsPlugin(profile_plugins.Plugin):
         len(self._files).to_bytes(2, byteorder='big'),
         file_mtime_text,
         file_size_text,
-        bytes(246),  # Reserved, unused for now
+        file_human_size_text,
+        bytes(242),  # Reserved, unused for now
         file_name_text,
     ])
     return data[:532] + bytes(max(0, 532 - len(data)))
@@ -289,7 +294,7 @@ class FilesystemOpsPlugin(profile_plugins.Plugin):
           args[1:],
           [suffix_ok, _cwa_does_not_exist, _cwa_name_ok, can_touch]):
         if _have_room(int(args[0])):
-          with open(args[0], 'xb') as f: f.truncate(int(args[0]))
+          with open(args[1], 'xb') as f: f.truncate(int(args[0]))
 
     elif command == _COMMAND_DELETE:           # Delete a file
       if _check_filesystem_op_args(
@@ -364,6 +369,23 @@ def _have_room(image_size: int) -> bool:
   """Helper: is there room for a file of size `image_size` on this volume?"""
   st_statvfs = os.statvfs('.')
   return image_size <= (st_statvfs.f_bsize * st_statvfs.f_bavail)
+
+
+def _human_readable_size(image_size: int) -> bytes:
+  """Helper: make a human-readable size string for an image size"""
+  # Specific ProFile sizes get special treatment.
+  if image_size == 5175296: return b'  5M'
+  if image_size == 10350592: return b' 10M'
+
+  # The divisors and bounds in remaining sizes are a bit odd --- they're chosen
+  # to reflect sizing conventions on the last page of the X/ProFile Operation
+  # Manual (so drive images using the number of sectors shown there will be
+  # listed as being the same size as the STAR size shown).
+  if image_size > 1089003999999: return b'HUGE'
+  if image_size > 1089003999: return f'{image_size//1089004000:3d}G'.encode()
+  if image_size > 1089004: return f'{image_size//1089004:3d}M'.encode()
+  if image_size > 9999: return f'{image_size//1090:3d}K'.encode()
+  return f'{image_size:4d}'.encode()
 
 
 # By calling plugin() within this module, the plugin service instantiates a

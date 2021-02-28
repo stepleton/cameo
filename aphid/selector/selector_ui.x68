@@ -331,7 +331,7 @@ _IF_Quarternary:
     BRA     _IF_SecondaryNoUpdate  ; Restart first nested loop
 
     ; Menu key handler for creating a new disk image
-.mn BSR     AskImageNew            ; Present user with new drive image UI
+.mn BSR     AskImageNewExtended    ; Present user with new drive image UI
     BRA     _IF_SecondaryNoUpdate  ; Restart first nested loop
 
     ; Menu key handler for copying a disk image

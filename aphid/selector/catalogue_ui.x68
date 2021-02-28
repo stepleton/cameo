@@ -23,7 +23,7 @@
 *    - CatalogueMenuUp -- Move the catalogue menu selection up
 *    - CatalogueMenuDown -- Move the catalogue menu selection down
 *    - AskImageSelect -- A UI narrating the selection of a new drive image
-*    - AskImageNew -- A UI for creating a new drive image
+*    - AskImageNewExtended -- A UI for creating a new drive image
 *    - AskImageDelete -- A UI for confirming drive image deletion
 *    - AskImageCopy -- A UI for copying a drive image
 *    - AskImageRename -- A UI for renaming a drive image
@@ -123,15 +123,15 @@ _CataloguePItem:
     MOVEA.L $4(SP),A1            ; Point A1 at zCatMenu
     MOVE.W  kUISM_PIArg(A1),-(SP)  ; We need to print for this entry...
     BSR     CatalogueItemName    ; ...and the name is now (A0)
-    ADDQ.L  #$2,SP               ; Pop item index off the stack
+    ; We'll keep the arg number on the stack for later
 
     ; This check depends on CatalogueUpdate padding out filenames in catalogue
     ; entries with NULs
-    TST.B   $54(A0)              ; Can the whole string fit on screen?
+    TST.B   $4F(A0)              ; Can the whole string fit on screen?
     BEQ.S   .pa                  ; That's a NUL, so yes; jump to print it all
 
     ; Truncate long filenames with an ellipsis character
-    LEA.L   $53(A0),A1           ; Point A1 toward the end of the string
+    LEA.L   $4E(A0),A1           ; Point A1 toward the end of the string
     MOVE.L  A1,D1                ; Copy A1 to D1
     BCLR.L  #$0,D0               ; Make that address even, just in case
     MOVE.L  D1,A1                ; Copy it back to A1
@@ -141,10 +141,22 @@ _CataloguePItem:
     mUiPrintStr A0               ; Print the temporarily truncated string
     MOVEA.L (SP)+,A1             ; Restore the address of the truncation
     MOVE.W  (SP)+,(A1)           ; Undo the truncation
-    BRA.S   .rt                  ; Jump ahead to return
+    BRA.S   .ps                  ; Jump ahead to print the size
 
+    ; Or print shorter filenames in their entirety
 .pa mUiPrintStr A0               ; Print the entire string
-.rt RTS
+
+    ; Print the size of the catalogue menu item on the right-hand side; here's
+    ; where we consume the entry number we put on the stack much earlier
+.ps LEA.L   zCatalogue(PC),A0    ; Point A0 to the drive image catalogue
+    ADDA.W  #kCatE_FIRST,A0      ; Advance to the first catalogue entry
+    MOVE.W  (SP)+,D0             ; We want the "human size" for this entry
+    MULU.W  #kCatE_NEXT,D0       ; ...which is offset this many bytes from A0
+    LEA.L   kCatE_HSize(A0,D0.W),A0  ; Point A0 at the string in that entry
+    mUiGotoC  #$53               ; Move to the right side of the screen
+    mUiPrintStr A0               ; And print it
+
+    RTS
 
 
     ; AskImageSelect -- A UI narrating the selection of a new drive image
@@ -171,7 +183,7 @@ AskImageSelect:
     RTS
 
 
-    ; AskImageNew -- A UI for creating a new drive image
+    ; AskImageNewExtended -- A UI for creating a new drive image
     ; Args:
     ;   (none)
     ; Notes:
@@ -181,11 +193,12 @@ AskImageSelect:
     ;   Z is set iff the creation operation and catalogue refresh both succeed
     ;       (User cancellation is not success)
     ;   Trashes D0-D2/A0-A2
-AskImageNew:
-    ; Copy the untitled drive image name to zBlock -- a scratch area that's also
-    ; the place where the drive image name will serve as an ImageNew argument
+AskImageNewExtended:
+    ; Copy the untitled drive image name a little ways into zBlock -- a scratch
+    ; area that ImageNewExtended will also use (it will likely move the final
+    ; image name back a few bytes)
     PEA.L   sNewImageFilename(PC)  ; Copy from the default new image filename
-    PEA.L   zBlock(PC)           ; Copy to the beginning of zBlock
+    PEA.L   (zBlock+$14,PC)      ; Copy to 20 bytes past the beginning of zBlock
     BSR     StrCpy255            ; Do the copy
     ADDQ.L  #$8,SP               ; Pop the copy arguments off the stack
 
@@ -193,24 +206,70 @@ AskImageNew:
     PEA.L   sAskTitleNew(PC)     ; Here's the UI's title string
     CLR.L   -(SP)                ; There is no old filename subtitle
     CLR.L   -(SP)                ; Since there's no filename to display
-    PEA.L   zBlock(PC)           ; Here's the filename to edit
+    PEA.L   (zBlock+$14,PC)      ; Here's the filename to edit
     BSR     _AskFilename         ; Ask the user what filename they'd like
     ADDQ.L  #$8,SP               ; Pop _AskFilename args, part 1
     ADDQ.L  #$8,SP               ; Pop _AskFilename args, part 2
 
-    BEQ.S   .go                  ; User says do it! Jump ahead
-    PEA.L   sAskVerdictCancelled(PC)  ; No, user wants to cancel
+    BEQ.S   .si                  ; User says do it! Jump ahead to get a size
+
+    ; We use this code if the user cancels at any point
+.ca PEA.L   sAskVerdictCancelled(PC)   ; No, user wants to cancel
     BSR     AskVerdict           ; Tell user that we cancelled
     ADDQ.L  #$4,SP               ; Pop the AskVerdict argument
     BRA.S   .rt                  ; Jump ahead to return
 
-    ; Attempt to create the image using shared code for 1-arg operations
-.go PEA.L   ImageNew(PC)         ; We want to call ImageNew
-    PEA.L   sAskOpFailedCreate(PC)   ; This is its failure message
-    BSR     _AskImageCommonOneArg  ; Call common code for 1-arg operations
-    ADDQ.L  #$8,SP               ; Pop common code arguments off the stack
+    ; Ask the user what size of image they would like
+.si PEA.L   sAskImageExtSizeMenu(PC)   ; Push a pointer to the image size menu
+    mUiPrint  s                  ; And print it
+.sl BSR     UiScreensaverWaitForKb   ; Await a keypress
+    BNE.S   .si                  ; Ask for size again if this wasn't a keypress
+    PEA.L   .sm(PC)              ; The key-interpreting table for UiPSystemKey
+    MOVE.B  zLisaConsoleKbChar(PC),-(SP)   ; Push the key we read onto the stack
+    BSR     UiPSystemKey         ; Go interpret the key
+    ADDQ.L  #$6,SP               ; Pop the UiPSystemKey arguments
+    BNE.S   .sl                  ; Loop if user typed a nonsense key
+    JMP     (A0)                 ; Jump as directed by the menu selection
+
+    ; These menu actions push the first ImageNewExtended arg onto the stack
+.sa PEA.L   sAskImageExtSize5(PC)  ; Push 5MB size string
+    BRA.S   .go
+.sb PEA.L   sAskImageExtSize10(PC)   ; Push 10MB size string
+    BRA.S   .go
+.sc PEA.L   sAskImageExtSize16(PC)   ; Push 16MB size string
+    BRA.S   .go
+.sd PEA.L   sAskImageExtSize32(PC)   ; Push 32MB size string
+    BRA.S   .go
+.se PEA.L   sAskImageExtSize256(PC)  ; Push 256MB size string
+
+    ; Now we push the filename address onto the stack and issue the command
+.go PEA.L   (zBlock+$14,PC)      ; Here's the filename for the new image
+    PEA.L   sAskIssuing(PC)      ; Print "\n\n\n\n\nIssuing command... "
+    mUiPrint  s
+    BSR     ImageNewExtended     ; Issue the image creation command
+    ADDQ.L  #$8,SP               ; Pop the ImageNewExtended arguments
+
+    ; Finish up using shared code
+    PEA.L   sAskOpFailedCreate(PC)   ; Here's what we print on failure
+    BSR     _AskImageCommon      ; Call common finishing code
+    ADDQ.L  #$4,SP               ; Pop common code arguments off the stack
 
 .rt RTS
+
+    DS.W    0                    ; Word alignment
+.sm DC.B    $00,'1'
+    DC.W    (.sa-.sm)            ; Action for 1: 5M ProFile
+    DC.B    $00,'2'
+    DC.W    (.sb-.sm)            ; Action for 1: 10M ProFile
+    DC.B    $00,'3'
+    DC.W    (.sc-.sm)            ; Action for 1: 10M ProFile
+    DC.B    $00,'4'
+    DC.W    (.sd-.sm)            ; Action for 1: 10M ProFile
+    DC.B    $00,'5'
+    DC.W    (.se-.sm)            ; Action for 1: 10M ProFile
+    DC.B    $01,'C'
+    DC.W    (.ca-.sm)            ; Action for C: cancel and return
+    DC.W    $0000                ; Table terminator
 
 
     ; AskImageDelete -- A UI for confirming drive image deletion
@@ -255,51 +314,17 @@ AskImageDelete:
     ADDQ.L  #$4,SP               ; Pop the AskVerdict argument
     BRA.S   .rt                  ; Jump ahead to return
 
-    ; Attempt to delete the image using shared code for 1-arg operations
-.go PEA.L   ImageDelete(PC)      ; We want to call ImageDelete
-    PEA.L   sAskOpFailedDelete(PC)   ; This is its failure message
-    BSR.S   _AskImageCommonOneArg  ; Call common code for 1-arg operations
-    ADDQ.L  #$8,SP               ; Pop common code arguments off the stack
-
-.rt RTS
-
-
-    ; _AskImageCommonOneArg -- Common code for AskImageNew and AskImageDelete
-    ; Args:
-    ;   SP+$8: l. Address of ImageNew or ImageDelete, as appropriate
-    ;   SP+$4: l. Address of sAskOpFailedCreate or sAskOpFailedDelete, same
-    ;   zBlock: Filename argument for ImageNew or ImageDelete
-    ; Notes:
-    ;   Requires an accurate, up-to-date catalogue
-    ;   Attempts to refresh the catalogue if the image operation succeeds
-    ;   Does less than _AskImageCommonOneArg because New and Delete have less
-    ;       in common than Copy and Rename
-    ;   Z is set iff the image operation and catalogue refresh both succeed
-    ;       (User cancellation is not success)
-    ;   Trashes D0-D2/A0-A2
-_AskImageCommonOneArg:
-    PEA.L   sAskIssuing(PC)      ; Print "\n\n\n\n\nIssuing command... "
+    ; Issue the command
+.go PEA.L   sAskIssuing(PC)      ; Print "\n\n\n\n\nIssuing command... "
     mUiPrint  s
-    MOVEA.L $8(SP),A0            ; A0 holds the address of Image___
-    PEA.L   zBlock(PC)           ; Filename argument for Image___
-    JSR     (A0)                 ; Call Image___
-    ADDQ.L  #$4,SP               ; Pop Image___ argument
-    BSR     AskOpResultByZ       ; Print whether we succeeded or failed
-    SNE.B   -(SP)                ; If Z push $00, otherwise push $FF
-    BEQ.S   .cr                  ; On success, jump to update the catalogue
-    MOVE.L  $6(SP),-(SP)         ; Copy failure message on the stack
-    mUiPrint  s                  ; Print it
-    PEA.L   sAskOpFailedComms(PC)  ; "we couldn't talk to Cameo/Aphid"
-    mUiPrint  s                  ; Print it
+    PEA.L   zBlock(PC)           ; Push the filename to delete onto the stack
+    BSR     ImageDelete          ; Issue the delete command
+    ADDQ.L  #$4,SP               ; Pop the ImageDelete argument
 
-    ; Now try to refresh the catalogue, whether the operation succeeded or not
-.cr BSR     NCatalogueUpdate     ; Narrated version of catalogue updating
-
-    ; Compute verdict based on the success of both steps and await a keypress
-    SNE.B   D0                   ; If Z set D0 to $00, otherwise to $FF
-    OR.B    (SP)+,D0             ; Or it with saved ~Z from Image___
-    TST.B   D0                   ; Was Z set for both? That's our verdict
-    BSR     AskVerdictByZ        ; Print the verdict, await a keypress
+    ; Finish up using shared code
+    PEA.L   sAskOpFailedDelete(PC)   ; Here's what we print on failure
+    BSR     _AskImageCommon      ; Call common finishing code
+    ADDQ.L  #$4,SP               ; Pop common code arguments off the stack
 
 .rt RTS
 
@@ -354,8 +379,6 @@ AskImageRename:
     ;   Requires an accurate, up-to-date catalogue
     ;   Attempts to refresh the catalogue if the image operation succeeds
     ;   Clears the screen prior to seeking input from the user
-    ;   Does more than _AskImageCommonOneArg because Copy and Rename have more
-    ;       in common than New and Delete
     ;   Z is set iff the image operation and catalogue refresh both succeed
     ;       (User cancellation is not success)
     ;   Trashes D0-D2/A0-A2
@@ -404,19 +427,39 @@ _AskImageCommonTwoArg:
     MOVE.L  A1,-(SP)             ; Pointer to second filename onto stack
     JSR     (A0)                 ; Call Image____
     ADDQ.L  #$8,SP               ; Pop Image____ arguments
+
+    ; Finish up using shared code
+    PEA.L   sAskOpFailedCreate(PC)   ; Here's what we print on failure
+    BSR.S   _AskImageCommon      ; Call common finishing code
+    ADDQ.L  #$4,SP               ; Pop common code arguments off the stack
+
+.rt RTS
+
+
+    ; _AskImageCommonOneArg -- Common AskImage* cleanup code
+    ; Args:
+    ;   SP+$4: l. Address of sAskOpFailedCreate or sAskOpFailedDelete as fits
+    ; Notes:
+    ;   Takes over just after Image* routines return
+    ;   Attempts to refresh the catalogue if the image operation succeeded
+    ;   Z is set iff the image operation and catalogue refresh both succeed
+    ;       (User cancellation is not success)
+    ;   Trashes D0-D2/A0-A2
+_AskImageCommon:
     BSR     AskOpResultByZ       ; Print whether we succeeded or failed
     SNE.B   -(SP)                ; If Z push $00, otherwise push $FF
     BEQ.S   .cr                  ; On success, jump to update the catalogue
-    PEA.L   sAskOpFailedComms(PC)  ; "we couldn't talk to Cameo/Aphid"
-    PEA.L   sAskOpFailedCreate(PC)   ; "A file with that name exists, or"
-    mUiPrint  s,s                ; Print the bad news
+    MOVE.L  $6(SP),-(SP)         ; Copy failure message on the stack
+    mUiPrint  s                  ; Print it
+    PEA.L   sAskOpFailedComms(PC)  ; "or we couldn't talk to Cameo/Aphid"
+    mUiPrint  s                  ; Print it
 
     ; Now try to refresh the catalogue, whether the operation succeeded or not
 .cr BSR     NCatalogueUpdate     ; Narrated version of catalogue updating
 
     ; Compute verdict based on the success of both steps and await a keypress
     SNE.B   D0                   ; If Z set D0 to $00, otherwise to $FF
-    OR.B    (SP)+,D0             ; Or it with saved ~Z from Image____
+    OR.B    (SP)+,D0             ; Or it with saved ~Z from Image___
     TST.B   D0                   ; Was Z set for both? That's our verdict
     BSR     AskVerdictByZ        ; Print the verdict, await a keypress
 
@@ -464,7 +507,7 @@ _AskFilename:
     ANDI.W  #$00FF,D1            ; Unsigned-extend D1 to a word
     SUB.W   D1,D0                ; Is the filename wider than the textinput?
     BLS.S   .ui                  ; If not, scroll position 0 is fine
-    MOVE.W  D0,kUITI_CPos(A1)    ; Otherwise, ".image" abuts the rightmost edge
+    MOVE.W  D0,kUITI_SPos(A1)    ; Otherwise, ".image" abuts the rightmost edge
 
     ; Prepare the user interface
 .ui BSR     ClearLisaConsoleScreen   ; Blank the screen
@@ -513,6 +556,21 @@ sAskTitleRename:
     DC.B    'Rename',$0
 
 
+sAskImageExtSizeMenu:
+    DC.B    $0A,$0A,$0A,' What size? (1) 5M ProFile, (2) 10M ProFile, '
+    DC.B    '(3) 16M, (4) 32M, (5) 256M, or C(ancel',$0
+sAskImageExtSize5:
+    DC.B    '5175296',$0
+sAskImageExtSize10:
+    DC.B    '10350592',$0
+sAskImageExtSize16:
+    DC.B    '17424064',$0
+sAskImageExtSize32:
+    DC.B    '34856640',$0
+sAskImageExtSize256:
+    DC.B    '278912704',$0
+
+
 sAskSubtitleCopy:
     DC.B    '    Copy from',$0
 sAskSubtitleRename:
@@ -525,7 +583,9 @@ sAskOpFailedDelete:
     DC.B   $0A,'   Either no file with that name exists, or ',$0
 sAskOpFailedComms:
     DC.B   'there was a problem telling the'
-    DC.B   $0A,'   Cameo/Aphid what to do.',$0
+    DC.B   $0A,'   Cameo/Aphid what to do. (Note: with slower microSD cards, '
+    DC.B   'even some successful',$0A,'   operations on big files can cause '
+    DC.B   'this error: check the catalogue before feeling sad.)',$0
 
 
 sNewImageFilename:

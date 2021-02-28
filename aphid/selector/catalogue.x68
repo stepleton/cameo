@@ -27,7 +27,7 @@
 *    - CatalogueItemName -- Point A0 at the filename of the Nth catalogue entry
 *    - CatalogueExists -- Check whether an image file exists in the catalogue
 *    - ImageChange -- Direct Cameo/Aphid to change the current drive image
-*    - ImageNew -- Direct Cameo/Aphid to create a new ProFile drive image
+*    - ImageNewExtended -- Direct Cameo/Aphid to make a new ProFile drive image
 *    - ImageDelete -- Direct Cameo/Aphid to delete a ProFile drive image
 *    - ImageCopy -- Direct Cameo/Aphid to make a copy of a ProFile drive image
 *    - ImageRename -- Direct Cameo/Aphid to rename a ProFile drive image
@@ -64,16 +64,19 @@ kCatE_FIRST EQU  $8              ; Size of header/First catalog entry
     ; the true time of day.
     ;
     ; Note that the record format makes room for null terminators at the ends of
-    ; the MTime and Size strings.
+    ; the MTime, Size, and HSize strings.
 
 kCatE_MTime EQU  $0              ; YYYYMMDDHHMMSS ASCII last-modified time
 _kCatE_T1   EQU  $E              ; (First null terminator)
 kCatE_Size  EQU  $F              ; ASCII right-justified file size (10 chars)
 _kCatE_T2   EQU  $19             ; (Second null terminator)
-kCatE_Name  EQU  $1A             ; Filename: up to 255 chars, null-terminated
+kCatE_HSize EQU  $1A             ; ASCII rt.-jus. human-readable size (4 chars)
+_kCatE_T3   EQU  $1E             ; (Third null terminator)
+_kCatE_P1   EQU  $1F             ; (Extra pad byte for filename word alignment)
+kCatE_Name  EQU  $20             ; Filename: up to 255 chars, null-terminated
                                  ; Shorter strings must null-pad!
 
-kCatE_NEXT  EQU  $11A            ; Size of a catalog entry record
+kCatE_NEXT  EQU  $120            ; Size of a catalog entry record
 
 
     ; Filesystem operations block record definition
@@ -91,6 +94,7 @@ kCatB_Nonce EQU  $0
 kCatB_Count EQU  $4
 kCatB_MTime EQU  $6
 kCatB_Size  EQU  $14
+kCatB_HSize EQU  $1E
 kCatB_Name  EQU  $114
 
 
@@ -145,7 +149,7 @@ CatalogueUpdate:
     TST.W   kCatH_Force(A3)      ; Is a catalogue reload forced?
     BNE.S   .fr                  ; Yes, skip the next check
     CMP.L   kCatH_Nonce(A3),D3   ; Is its nonce same as the one in the block?
-    BEQ.S   .rt                  ; If so, exit with success; no update needed
+    BEQ     .rt                  ; If so, exit with success; no update needed
 
     ; The nonce has changed, or we're forced to reload the catalogue regardless,
     ; so it's time to do just that
@@ -182,7 +186,14 @@ CatalogueUpdate:
     ADDA.W  #$A,SP               ; Pop copy arguments off the stack
     CLR.B   _kCatE_T2(A3)        ; Null-terminate the size string
 
-    PEA.L   kCatB_Name(A2)       ; Copy mtime from the loaded information block
+    PEA.L   kCatB_HSize(A2)      ; Copy "human size" from the loaded info. block
+    PEA.L   kCatE_HSize(A3)      ; Copy to the catalogue entry
+    MOVE.W  #$4,-(SP)            ; The "human size" string is 10 bytes long
+    BSR     Copy                 ; Perform the copy
+    ADDA.W  #$A,SP               ; Pop copy arguments off the stack
+    CLR.B   _kCatE_T3(A3)        ; Null-terminate the size string
+
+    PEA.L   kCatB_Name(A2)       ; Copy filename from the loaded info. block
     PEA.L   kCatE_Name(A3)       ; Copy to the catalogue entry
     MOVE.W  #$100,-(SP)          ; The filename is 256 bytes long
     BSR     Zero                 ; For TST.B in _CataloguePItem: zero unused...
@@ -194,7 +205,7 @@ CatalogueUpdate:
 
     LEA.L   kCatE_NEXT(A3),A3    ; Advance A3 to the next catalogue entry
     ADDQ.W  #$1,D2               ; Increment count of catalogue entries
-    BRA.S   .lp                  ; And loop back to the next entry
+    BRA     .lp                  ; And loop back to the next entry
 
 .rt MOVEM.L (SP)+,D3/A3          ; Restore various registers from the stack
     RTS
@@ -252,6 +263,7 @@ CatalogueExists:
     ;   SP+$4: l. Points to the name of the drive image to change to the
     ;       current drive image
     ; Notes:
+    ;   (Does not make use of the _ImageCommon helper, despite its name)
     ;   Does NOT check that a file by that name is present in the catalogue
     ;   Sets Z if the command was issued successfully
     ;   Cannot verify that the image has actually been changed
@@ -282,15 +294,17 @@ ImageChange:
 .rt RTS
 
 
-    ; ImageNew -- Direct Cameo/Aphid to create a new ProFile drive image
+    ; ImageNewExtended -- Direct Cameo/Aphid to make a new ProFile drive image
     ; Args:
+    ;   SP+$8: l. Points to a null-terminated string of ASCII digits that codes
+    ;       the size of the new drive image
     ;   SP+$4: l. Points to the name to give to the new drive image
     ; Notes:
     ;   Does not refresh the catalogue before or after the call
     ;   Sets Z if no file by that name was present in the catalogue and the
     ;       command was issued successfully
     ;   Trashes D0-D2/A0-A1 and the zBlock disk buffer
-ImageNew:
+ImageNewExtended:
     ; First, see if the filename is present in the catalogue
     MOVE.L  $4(SP),-(SP)         ; Copy the filename pointer on the stack
     BSR     CatalogueExists      ; Is there already a file with this name?
@@ -299,10 +313,23 @@ ImageNew:
     BNE.S   .rt                  ; ...it means we need to give up
 
     ; The operation we want to do is create
-    MOVE.W  #'mk',D2             ; To be used by ProFileIo much later
-    BRA.S   _ImageCommonOneArg   ; Use code shared by ImageDelete to finish
+    MOVE.W  #'mx',D2             ; To be used by ProFileIo much later
 
-.rt RTS
+    ; Copy the image size string to the disk block buffer
+    MOVE.L  $8(SP),-(SP)         ; We want to copy from the argument size...
+    PEA.L   zBlock(PC)           ; ...to the disk block buffer
+    BSR     StrCpy255            ; And here we go
+
+    ; Replace args and copy the filename just after that
+    MOVE.L  $C(SP),$4(SP)        ; We want to copy from the argument filename...
+    MOVE.L  A0,(SP)              ; ...to after the image size string
+    BSR     StrCpy255            ; And here we go
+    ADDQ.L  #$8,SP               ; Pop arguments off the stack
+
+    ; Issue the command to the Cameo/Aphid (D2 was set much earlier)
+    BRA.S   _ImageCommon         ; Return via common command-issuing code
+
+.rt RTS                          ; This return is only used by errors
 
 
     ; ImageDelete -- Direct Cameo/Aphid to delete a ProFile drive image
@@ -318,14 +345,11 @@ ImageDelete:
     MOVE.L  $4(SP),-(SP)         ; Copy the filename pointer on the stack
     BSR     CatalogueExists      ; Is there already a file with this name?
     ADDQ.L  #$4,SP               ; Pop the filename pointer off the stack
-    BNE.S   _ImageDeleteReturn   ; If not, go give up
+    BNE.S   .rt                  ; If not, go give up
 
     ; The operation we want to do is delete
     MOVE.W  #'rm',D2             ; To be used by ProFileIo much later
-    ; Fall through into _ImageCommonOneArg
 
-    ; The rest of this routine is shared with ImageNew
-_ImageCommonOneArg:
     ; Copy the filename to the disk block buffer
     MOVE.L  $4(SP),-(SP)         ; We want to copy from the argument filename...
     PEA.L   zBlock(PC)           ; ...to the disk block buffer
@@ -333,13 +357,9 @@ _ImageCommonOneArg:
     ADDQ.L  #$8,SP               ; Pop arguments off the stack
 
     ; Issue the command to the Cameo/Aphid (D2 was set much earlier)
-    MOVE.L  #kCatBlockWr,D1      ; We wish to write to the "magic" block
-    LEA.L   zBlock(PC),A0        ; The filename is in zBlock
-    MOVEA.L zProFileIoPtr(PC),A1   ; Copy ProFile I/O routine address to A1
-    JSR     (A1)                 ; Call the ProFile I/O routine
+    BRA.S   _ImageCommon         ; Return via common command-issuing code
 
-_ImageDeleteReturn:
-    RTS
+.rt RTS                          ; This return is only used by errors
 
 
     ; ImageCopy -- Direct Cameo/Aphid to make a copy of a ProFile drive image
@@ -379,14 +399,14 @@ _ImageCommonTwoArg:
     MOVE.L  $8(SP),-(SP)         ; Copy the filename pointer on the stack
     BSR     CatalogueExists      ; Is there already a file with this name?
     ADDQ.L  #$4,SP               ; Pop the filename pointer off the stack
-    BNE.S   .rt                  ; If not, go give up
+    BNE.S   _ImageCommonReturn   ; If not, go give up
 
     ; Check that the destination file is absent from the catalogue
     MOVE.L  $4(SP),-(SP)         ; Copy the filename pointer on the stack
     BSR     CatalogueExists      ; Is there already a file with this name?
     ADDQ.L  #$4,SP               ; Pop the filename pointer off the stack
     EORI.B  #$04,CCR             ; Invert Z because existing is bad...
-    BNE.S   .rt                  ; ...it means we need to give up
+    BNE.S   _ImageCommonReturn   ; ...it means we need to give up
 
     ; Copy the source filename to the disk block buffer
     MOVE.L  $8(SP),-(SP)         ; We want to copy from the argument filename...
@@ -399,11 +419,15 @@ _ImageCommonTwoArg:
     MOVE.L  A0,-(SP)             ; ...to just after the source filename
     BSR     StrCpy255            ; And here we go
     ADDQ.L  #$8,SP               ; Pop arguments off the stack
+    ; Fall through to _ImageCommon
 
+    ; Common code for all Image* routines except ImageChange
+_ImageCommon:
     ; Issue the command to the Cameo/Aphid (D2 was set much earlier)
     MOVE.L  #kCatBlockWr,D1      ; We wish to write to the "magic" block
     LEA.L   zBlock(PC),A0        ; The filenames are in zBlock
     MOVEA.L zProFileIoPtr(PC),A1   ; Copy ProFile I/O routine address to A1
     JSR     (A1)                 ; Call the ProFile I/O routine
 
-.rt RTS
+_ImageCommonReturn:
+    RTS

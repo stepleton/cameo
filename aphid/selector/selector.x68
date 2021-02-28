@@ -56,9 +56,9 @@ kSecC_Start EQU $800             ; The bootloader loads code to $800
     ; We manually trim these sizes down to the smallest values that won't result
     ; in more than one byte being assigned to the same memory location (the
     ; telltale sign of which is an error message from srec_cat).
-kSecC_SSize EQU $32BA            ; The size of all code if fStandalone=0
+kSecC_SSize EQU $3342            ; The size of all code if fStandalone=0
 kSecC_PSize EQU $1F6             ; Additional code size if fStandalone=1
-kSecD_Size  EQU $1160            ; The size of the kSecData section
+kSecD_Size  EQU $1274            ; The size of the kSecData section
 kSecS_Size  EQU $26A             ; The size of the kSecScratch section
 
 
@@ -288,7 +288,7 @@ _AnyKeyDelay:
 
 
 sVersion:
-    DC.B    '0.8',$00
+    DC.B    '0.9',$00
 
 
 * Scratch data ----------------------------------

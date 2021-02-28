@@ -305,16 +305,27 @@ this interface:
  Return (↵) to proceed, Clear (⌧) to cancel.
 
 ```
-You can modify the new filename with the keyboard in a conventional way, but the
-`.image` suffix cannot be changed. After you press Return, the Selector will
-check to make sure that the filename isn't already in use by another image file,
-then issue an image file creation command to the Cameo/Aphid.
+You can modify the new filename with the keyboard in a conventional way, but
+the `.image` suffix cannot be changed. After you press Return, the Selector
+will ask what size the new drive image should be with this prompt:
+```
+ What size? (1) 5M ProFile, (2) 10M ProFile, (3) 16M, (4) 32M, (5) 256M, or C(ancel
+```
+Note that some Lisa operating systems are only compatible with a few of these
+options: in general, the "non-ProFile" sizes will only work with certain
+versions of MacWorks (larger sizes require newer MacWorks and Classic MacOS
+versions). Once you choose, the Selector will check to make sure that the
+filename isn't already in use by another image file, then issue an image file
+creation command to the Cameo/Aphid.
 
 Even if these steps complete successfully, the Cameo/Aphid may refuse to
 generate the new drive image for one reason or another: perhaps the name you've
 specified contains illegal characters like '/', or maybe there's not enough
-empty space left to hold a new hard drive image. Browse the drive image
-catalogue to be certain that your new hard drive image has been created.
+empty space left to hold a new hard drive image. Also, with slower microSD
+cards, it can take so long to create a larger drive image that the Selector
+will assume that the operation has failed, even when it ultimately succeeds.
+Either way, browse the drive image catalogue to be certain of whether your new
+hard drive image has been created.
 
 ### C(opy
 
@@ -343,8 +354,11 @@ Cameo/Aphid.
 Even if these steps complete successfully, the Cameo/Aphid may refuse to
 generate a duplicate drive image for one reason or another: perhaps the name
 you've specified contains illegal characters like '/', or maybe there's not
-enough empty space left to hold a new hard drive image. Browse the drive image
-catalogue to be certain that the duplicate hard drive image has been created.
+enough empty space left to hold a new hard drive image. Also, with slower
+microSD cards, it can take so long to copy a larger drive image that the
+Selector will assume that the operation has failed, even when it ultimately
+succeeds.  Either way, browse the drive image catalogue to be certain of
+whether the duplicate hard drive image has been created.
 
 ### R(ename
 
