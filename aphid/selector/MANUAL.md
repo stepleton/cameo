@@ -814,3 +814,5 @@ image selector without the help of the following people and resources:
 30 January 2021: 0.7 release, adding a screensaver. (Tom Stepleton)
 
 16 February 2021: 0.8 release, status printing bugfix. (Tom Stepleton)
+
+29 February 2021: 0.9 release, image creation size option. (Tom Stepleton)
