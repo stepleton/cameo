@@ -56,10 +56,10 @@ kSecC_Start EQU $800             ; The bootloader loads code to $800
     ; We manually trim these sizes down to the smallest values that won't result
     ; in more than one byte being assigned to the same memory location (the
     ; telltale sign of which is an error message from srec_cat).
-kSecC_SSize EQU $3342            ; The size of all code if fStandalone=0
+kSecC_SSize EQU $35CC            ; The size of all code if fStandalone=0
 kSecC_PSize EQU $1F6             ; Additional code size if fStandalone=1
-kSecD_Size  EQU $1274            ; The size of the kSecData section
-kSecS_Size  EQU $26A             ; The size of the kSecScratch section
+kSecD_Size  EQU $12E2            ; The size of the kSecData section
+kSecS_Size  EQU $284             ; The size of the kSecScratch section
 
 
     IFEQ fStandalone
@@ -124,7 +124,8 @@ MAIN:
     ; 1. Initialise library components for screen and keyboard/mouse I/O.
     BSR     InitLisaConsoleKbMouse
     BSR     InitLisaConsoleScreen
-    BSR     ClearLisaConsoleScreen
+    ; We loop back here if the user types the wrong autoboot password
+.cs BSR     ClearLisaConsoleScreen
 
     ; 2. Say hello
     PEA     sVersion(PC)         ; Push version string onto the stack
@@ -153,20 +154,24 @@ MAIN:
     BSR     FlushCops            ; Flush any bytes coming in from the COPS
     mUiPrint  <$0A,$0A,' (Any key to interrupt) Running autoboot program in 3...'>
     BSR     _AnyKeyDelay         ; Wait one second for any key
-    BEQ.S   .ui                  ; Key pressed; jump ahead to the main menu
+    BEQ.S   .pw                  ; Key pressed; jump ahead to the main menu
     mUiPrint  <'2...'>
     BSR     _AnyKeyDelay         ; Wait one second for any key
-    BEQ.S   .ui                  ; Key pressed; jump ahead to the main menu
+    BEQ.S   .pw                  ; Key pressed; jump ahead to the main menu
     mUiPrint  <'1...',$0A>
     BSR     _AnyKeyDelay         ; Wait one second for any key
-    BEQ.S   .ui                  ; Key pressed; jump ahead to the main menu
+    BEQ.S   .pw                  ; Key pressed; jump ahead to the main menu
 
     PEA.L   zScriptPad(PC)       ; Push address of autoboot script
     MOVE.B  #$02,-(SP)           ; Pause for keypress if the script fails
     BSR     Interpret            ; Run autoboot program; may never return!
     ADDQ.L  #$6,SP               ; But if it does, pop Interpret arguments
 
-    ; 7. Over to the main menu
+    ; 7. Demand password for interrupting autoboot (or returning from it)
+.pw BSR     _TryPassword         ; Check password if one is defined
+    BNE     .cs                  ; Bad password? Try again
+
+    ; 8. Over to the main menu
 .ui BRA     Interface            ; It never returns
 
 
@@ -205,10 +210,51 @@ _TrySplashImage:
 .rt RTS
 
 
+    ; _TryPassword -- Try to get the autoboot password from the user
+    ; Args:
+    ;   zConfig: This Cameo/Aphid's config data structure
+    ; Notes:
+    ;   Sets Z if there was no password or if the user typed the correct
+    ;       password; otherwise, Z is clear
+    ;   Trashes D0-D2/A0-A2
+_TryPassword:
+    ; See if there is a password set
+    PEA.L   zConfig(PC)          ; Push config data structure addr onto stack
+    BSR     ConfPasswordGet      ; Point A0 at its password field
+    MOVE.L  A0,(SP)              ; For later: password address stack switcheroo
+    TST.B   (A0)                 ; Has a password been set?
+    BEQ.S   .rt                  ; No, jump to exit
+
+    ; If so, get a password from the user
+    mUiPrint  <$0A,$0A,' Password: [        ]'>
+    LEA.L   zPassword(PC),A1     ; Point A1 at the textinput config structure
+    CLR.W   kUITI_Len(A1)        ; There is no text in the textbox
+    CLR.W   kUITI_CPos(A1)       ; The cursor position is location 0
+    CLR.B   kUITI_Text(A1)       ; Put a NUL in pos. 0 of the password string
+    MOVE.L  A1,-(SP)             ; Push our textinput config on the stack
+    BSR     UiTextInput          ; Get the input from the user
+    MOVEA.L (SP)+,A1             ; Pop textinput config address back into A1
+
+    ; See if the user's password matches what's in the config
+    MOVE.W  #$8,-(SP)            ; Passwords are at most 8 characters long
+    MOVE.L  $2(SP),-(SP)         ; Push the address of the saved password
+    PEA.L   kUITI_Text(A1)       ; Push the address of what the user typed
+    BSR     StrNCmp              ; Compare both; Z flag returns to our caller
+    ADDQ.L  #$8,SP               ; Pop StrNCmp args, part 1
+    ADDQ.L  #$2,SP               ; Pop StrNCmp args, part 2
+
+    ; "Operation failed" is an odd way to say "bad password", but it'll do
+    BEQ.S   .rt                  ; If the user got it right, just skip ahead
+    BSR     AskVerdictByZ        ; Otherwise "Operation failed"
+
+.rt ADDQ.L  #$4,SP               ; Pop saved password address off the stack
+    RTS
+
+
     ; _TryLoadAutoboot -- Attempt to load the autoboot script into zBlock
-    ; args:
-    ;   (none)
-    ; notes:
+    ; Args:
+    ;   zConfig: This Cameo/Aphid's config data structure
+    ; Notes:
     ;   Sets Z iff autoboot is enabled, the script loaded successfully, and the
     ;       script block checksum matched
     ;   Trashes D0-D1/A0-A1 and the zBlock disk block buffer
@@ -267,6 +313,7 @@ _AnyKeyDelay:
     INCLUDE drive.x68
     INCLUDE key_value.x68
     INCLUDE narrated.x68
+    INCLUDE outro.x68
     INCLUDE script.x68
     INCLUDE selector_ui.x68
     INCLUDE ui_base.x68
@@ -288,7 +335,7 @@ _AnyKeyDelay:
 
 
 sVersion:
-    DC.B    '0.9',$00
+    DC.B    '1.0',$00
 
 
 * Scratch data ----------------------------------
@@ -307,6 +354,24 @@ zProFileIoPtr:
     DC.L    'poin'               ; Points to: block read/write routine
 zProFileErrCodePtr:
     DC.L    'ters'               ; Points to: error code byte
+
+
+    ; UiTextInput data structure for the autoboot password prompt
+zPassword:
+    DC.B    $0C                  ; Starting column is 12
+    DC.B    $08                  ; Textbox width is 8
+    DC.B    $0                   ; It has no scroll margins (we don't scroll)
+    DC.B    $0                   ; (Reserved for internal state)
+    DC.W    $0                   ; There is no protected prefix
+    DC.W    $0                   ; There is no protected suffix
+    DC.W    $08                  ; String max width is 8
+    DC.W    $0                   ; To change: cursor position
+    DC.W    $0                   ; Scroll position is 0 and never changes
+    DC.W    $0                   ; To change: text length
+
+    DS.B    $8                   ; Character buffer for string data
+    DC.W    $0                   ; Precautionary null terminator and padding
+
 
 
 * Buffer data -----------------------------------

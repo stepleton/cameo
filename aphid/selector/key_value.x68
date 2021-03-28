@@ -213,6 +213,13 @@ KeyValuePut:
     SECTION kSecData
 
 
+    ; Strangely, we want the address of kKV_LoadRequest to be *odd-aligned*,
+    ; since this places all of the keys in the load request into even alignment,
+    ; and occasionally we take advantage of this. Here's one way to do that.
+    IFEQ    *-(2*(*/2))
+    DC.B    '@'                    ; This byte is only for padding
+    ENDC
+
     ; This baked-in read request is issued when the Selector boots, after it has
     ; confirmed that it is talking to a Cameo/Aphid device (and not e.g. a real
     ; ProFile). The requested key/value store items are configuration data for

@@ -67,7 +67,7 @@ Interface:
     ; Otherwise, if we're here, the user chose to quit: exit to the ROM
 .ex BSR     ClearLisaConsoleScreen   ; Blank the screen
     mUiPrint  r1c1,<'Bye!'>        ; Since exiting to ROM takes a little while
-    CLR.L   D0                     ; Display no error code to the user
+    BSR     EjectFloppies          ; Eject floppy disks; show its error code
     SUBA.L  A2,A2                  ; There is no icon to show
     LEA.L   sSuiBye(PC),A3         ; But there is this message
     JMP     $FE0084                ; Return to the ROM monitor; bye!
@@ -250,6 +250,9 @@ _IF_Tertiary:
 _IF_Quarternary:
     ; Clear tally of how many times we've drawn the status line
     CLR.W   D3                     ; Note: we clear it in other places, too
+    ; Clear the bit that says that the user pressed the power button
+    LEA.L   zLisaConsoleKbFault(PC),A2   ; A2 will refer to zLisa...Fault below
+    BCLR.B  #$03,(A2)              ; The power button bit is bit 3
 
     ; Get and draw status from the Cameo/Aphid, or do the screensaver
 .sl BSR     DoSysInfo              ; Print system status information
@@ -272,6 +275,8 @@ _IF_Quarternary:
     BEQ.S   .me                    ; A glyph key is fully typed; go deal with it
     ROXR.W  #$1,D0                 ; Test X by rotating and checking the sign...
     BMI.S   .pl                    ; ...If set, we need to get more COPS bytes
+    BTST.B  #$03,(A2)              ; Did the user press the power button?
+    BNE     PowerOff               ; If so, go turn off the Lisa
     
     ; If here, we interpret raw character codes for scrolling, and the way this
     ; is implemented means you can "turbo scroll" by moving the mouse while you
@@ -323,6 +328,7 @@ _IF_Quarternary:
     BSR     NImageChange           ; Change the disk image
     ADDQ.L  #$4,SP                 ; Pop filename off of stack
     BNE     _IF_Fatal              ; Quit to the outer loop on error
+    BSR     NEjectFloppies         ; Attempt to eject floppies
     BSR     NBootHd                ; Attempt to boot
     BRA     _IF_Secondary          ; We're back? Well, restart first nested loop
 

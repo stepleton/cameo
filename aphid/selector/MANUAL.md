@@ -184,7 +184,7 @@ like this:
 
 ```
 
- [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.9]
+ [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [1.0]
 
   Filename                                                    1,234,567,890 bytes free
  --------------------------------------------------------------------------------------
@@ -229,11 +229,11 @@ keypad to move the selection up and down respectively.
 
 The top of the screen shows a partial menu of keyboard commands:
 ```
- [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [0.9]
+ [No Name] Command: B(oot, S(elect, N(ew, C(opy, R(ename, D(elete, ? [1.0]
 ```
 The bracket `(` indicates that the first letter of the command activates the
 command, thus the `C` key will start the Copy command. Also shown here are the
-version number of the Selector software (the `0.9` in square brackets at right)
+version number of the Selector software (the `1.0` in square brackets at right)
 and the "moniker" for this Cameo/Aphid (the `No Name` in square brackets at
 left). A moniker is a name given to a Cameo/Aphid for identification purposes:
 more precisely, it's a name given to a microSD card containing an installation
@@ -271,13 +271,17 @@ instead of the number of logged-in users. This information updates around once
 every two seconds. It serves little purpose except to look "geeky" and to
 demonstrate that the Cameo/Aphid is operating and responsive.
 
+Finally, while the catalogue is displayed, you can cause the Lisa to eject all
+floppy disks and power down by pressing the power button.
+
 The rest of this section describes all of the keyboard commands.
 
 ### B(oot and S(elect
 
 The **Select** command causes the Cameo/Aphid to switch its current hard drive
 image to the one selected in the catalogue display. The **Boot** command does
-the same, then attempts to boot the Lisa from that hard drive image.
+the same, then attempts to boot the Lisa from that hard drive image after
+ejecting any inserted floppy disks.
 
 When the Cameo/Aphid switches to a different hard drive image, this means that
 all reads and writes to the emulated hard drive will access data from the
@@ -447,7 +451,21 @@ the Autoboot toggle command was executed at the main interface.
 
 Typing `T` here will disable autoboot, which means that on boot, the Selector
 will present the main interactive interface. Typing `S` will enable autoboot for
-the drive image file shown.
+the drive image file shown, but not before giving the user a chance to enter an
+autoboot password:
+```
+ Password for interrupting autoboot? Leave blank for none: [        ]
+
+
+ Return (↵) to proceed, Clear (⌧) to cancel.
+```
+The autoboot password mechanism is described in the [Autobooting](#autobooting)
+section. Cancelling here will mean that the Selector makes no changes to its
+existing autoboot configuration; a password entered here will mean that the
+user has to supply that password on Selector start-up in order to cancel the
+autoboot process. An empty password (achieved by pressing Return or ↵
+straightaway) allows the user to cancel the autoboot process without supplying
+a password.
 
 ### M(oniker
 
@@ -566,7 +584,7 @@ screen prior to booting from the designated hard drive image:
 ```
 
  [Cameo/Aphid]
- Hard drive image manager v0.9
+ Hard drive image manager v1.0
  Connecting to the boot drive: the built-in parallel port... OK
  Loading configuration into the key/value cache... OK
  Reading configuration... OK
@@ -577,14 +595,23 @@ screen prior to booting from the designated hard drive image:
  Updating the drive image catalogue... OK
  Checking that there is a drive image called blu.image... OK
  Changing the drive image to blu.image... OK
+ Floppy eject... OK
  Booting from the built-in parallel port...
 
 ```
 Most status messages shown are not very important when everything is working,
 but they may help you troubleshoot if something goes wrong. Otherwise, the most
-important item is the `3...2...1...` countdown, which takes several seconds to
+important item is the `3...2...1...` countdown, which takes a few seconds to
 complete. During that time, you may interrupt the autoboot process by pressing
-any key, which takes you to the main interactive interface.
+any key, which can take you to the main interactive interface. If the user has
+specified an autoboot password, though, you will first have to enter the
+password at a prompt that looks like this:
+```
+ Password: [        ]
+```
+and press Return or ↵. If the password you supply is incorrect, the autoboot
+process will start over from the beginning, and you will have to interrupt the
+countdown again in order to try a different password.
 
 The autoboot mechanism is built on the Selector's rudimentary [scripting
 capability](#scripting) and may be coerced into doing more sophisticated things
@@ -602,14 +629,14 @@ to the key/value store that tells the Selector to perform all of the steps of
 the autoboot process. For a hard drive image called `kazoo.image`, the script
 would look like this:
 ```
-ClogImag0Akazoo.image_BootHalt
+ClogImag0Akazoo.image_EjctBootHalt
 ```
-This script contains four commands: `Clog`, which means "update the drive image
-catalogue"; `Imag`, meaning "switch to the following hard drive image"; `Boot`,
-"boot from the hard drive image"; and `Halt`, marking the end of the script.
-The terse "scripting language" is designed more for the Selector's convenience
-than the user's, but it is at least possible to use the [key/value editor](
-#keyvalue) to make more elaborate custom scripts.
+This script contains five commands: `Clog`, which means "update the drive image
+catalogue"; `Imag`, meaning "switch to the following hard drive image"; `Ejct`,
+"eject all floppy disks"; `Boot`, "boot from the hard drive image"; and `Halt`,
+marking the end of the script. The terse "scripting language" is designed more
+for the Selector's convenience than the user's, but it is at least possible to
+use the [key/value editor](#keyvalue) to make more elaborate custom scripts.
 
 Scripts are made of sequences of commands and their arguments. There is no
 flow control, and any command that fails will cause the script to terminate.
@@ -621,8 +648,8 @@ between the end of the "kazoo.image" argument value and the `Boot` command.
 Except for padding bytes, there is no spacing between script commands.
 
 Here is a list of the commands that you can use in scripts. **Note that only
-the `Clog`, `Imag`, `Boot`, and `Halt` commands have been tested at time of
-writing.**
+the `Clog`, `Imag`, `Ejct`, `Boot`, and `Halt` commands have been tested at
+time of writing.**
 
 * `Halt`: Immediately terminate the script. The Selector will interpret any
   script that reaches a `Halt` command as having completed successfully.
@@ -647,6 +674,9 @@ writing.**
 * `Home`: Make the parallel port hosting the Cameo/Aphid that was used for
   booting the Lisa the current parallel port. Will fail if the boot device was
   not a Cameo/Aphid (for example, if it was a floppy disk).
+
+* `Ejct`: Tell all of the Lisa's floppy disk drives (i.e. both Twiggy drives on
+  a Lisa 1; the 3.5" drive on a Lisa 2) to eject their disks.
 
 * `Boot`: Boot the Lisa from the hard drive device on the Selector's current
   parallel port. If the hard drive device is a Cameo/Aphid, then whatever drive
@@ -724,16 +754,17 @@ Scan
 Name02Bob~ClogImag0EXenix_Usr.image~
 Name04Carol~ClogImag13Xenix_UsrLocal.image
 Name04Alice~ClogImag0FXenix_Root.image
-BootHalt
+EjctBootHalt
 ```
 (where line breaks have been added for display purposes only) tells Bob, Carol,
 and Alice to switch to the drive images `Xenix_Usr.image`,
-`Xenix_UsrLocal.image`, and `Xenix_Root.image` respectively, then tells Alice
-to boot the Lisa from `Xenix_Root.image`. Note placement of padding bytes where
-necessary, use of the `Clog` command prior to `Imag`, and the final `Halt`
-command for consistency's sake, even though the `Boot` command is unlikely to
-ever finish running (instead, presumably, it will boot the Xenix operating
-system, which will evict the Selector from memory altogether).
+`Xenix_UsrLocal.image`, and `Xenix_Root.image` respectively, then ejects any
+floppy disks, then tells Alice to boot the Lisa from `Xenix_Root.image`. Note
+placement of padding bytes where necessary, use of the `Clog` command prior to
+`Imag`, and the final `Halt` command for consistency's sake, even though the
+`Boot` command is unlikely to ever finish running (instead, presumably, it will
+boot the Xenix operating system, which will evict the Selector from memory
+altogether).
 
 Most script commands print information to the display, allowing you to monitor
 their progress (if you can read fast enough) and to know where an error has
@@ -742,43 +773,22 @@ occurred if trouble is encountered.
 
 ## Potential improvements
 
-#### 1. Pressing the power button should shut down the Lisa
+#### 1. It should be possible to copy drive images between two Cameo/Aphids
 
-At present, the Selector ignores the power button. A full-featured Lisa
-shutdown should eject diskettes from floppy drives and dim the display before
-turning off the Lisa.
-
-#### 2. The Selector should eject its boot disk if it is booted from a floppy
-
-A floppy disk that boots the Selector will not be readable to common Lisa
-operating systems, and if it remains in the disk drive after one of those
-operating systems boots, it may be possible to format the disk by accident.
-
-#### 3. It should be possible to copy drive images between two Cameo/Aphids
-
-#### 4. It should be possible to transfer drive images over the serial port
+#### 2. It should be possible to transfer drive images over the serial port
 
 It's possible that the best place for both of these features is a separate
 computer program. When the Selector boots, the entire Selector program is
 loaded into memory, and bundling in more features mean longer load times.
 
-#### 5. There should be a way to password-protect the interactive interface
-
-In public settings, an observer watching the "countdown delay" part of the
-autoboot process may be tempted to interrupt the autoboot and peruse the drive
-image catalogue. While it would offer little practical security, a password
-challenge prior to entering the main interactive interface could e.g. help
-prevent computer museum guests from disabling interactive exhibits, whether on
-purpose or by accident.
-
-#### 6. There should be a way to run scripts besides the autoboot mechanism
+#### 3. There should be a way to run scripts besides the autoboot mechanism
 
 At present, the only way to run a custom script is to enable the autoboot
 mechanism and then manually edit the autoboot script in the key/value editor.
 Custom scripts may be useful for purposes besides autobooting, and it may be
 useful to be able to invoke a custom script manually.
 
-#### 7. The Selector should be able to install itself onto boot media
+#### 4. The Selector should be able to install itself onto boot media
 
 [The BLU program](http://sigmasevensystems.com/BLU.html) can install itself
 onto hard drives and floppy disks. It may not be so difficult for the Selector
@@ -809,10 +819,17 @@ image selector without the help of the following people and resources:
 17 January 2021: Initial release.
 (Tom Stepleton, [stepleton@gmail.com](mailto:stepleton@gmail.com), London)
 
-24 January 2021: 0.6 release, adding the S(elect command. (Tom Stepleton)
+24 January 2021: 0.6 release, adding the S(elect command.
+(Tom Stepleton)
 
-30 January 2021: 0.7 release, adding a screensaver. (Tom Stepleton)
+30 January 2021: 0.7 release, adding a screensaver.
+(Tom Stepleton)
 
-16 February 2021: 0.8 release, status printing bugfix. (Tom Stepleton)
+16 February 2021: 0.8 release, status printing bugfix.
+(Tom Stepleton)
 
-28 February 2021: 0.9 release, image creation size option. (Tom Stepleton)
+28 February 2021: 0.9 release, image creation size option.
+(Tom Stepleton)
+
+28 March 2021: 1.0 release, power button, floppy eject, autoboot password.
+(Tom Stepleton)

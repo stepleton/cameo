@@ -143,8 +143,8 @@ BlockCsumSet:
     ; Notes:
     ;   Could be faster; lots of memory accesses
     ;   Sets flags in the manner of strncmp(3) from C; if Z is set, then the
-    ;       strings are equal up to the terminator or (SP+$C) characters
-    ;       (whichever comes first)
+    ;       strings are equal up through the terminator or (SP+$C-1) characters
+    ;       (both inclusive, whichever comes first)
     ;   Flags are not dependable if the number of bytes to compare is 0
     ;   Trashes D0-D1/A0-A1
 StrNCmp:

@@ -29,8 +29,10 @@
 *    - ConfFeatureSet -- Set a bit in the feature bitmap
 *    - ConfFeatureClear -- Clear a bit in the feature bitmap
 *    - ConfFeatureTest -- Test a bit in the feature bitmap
-*    - ConfMonikerSet -- Change the moniker
 *    - ConfMonikerGet -- Retrieve the address of the moniker
+*    - ConfMonikerSet -- Change the moniker
+*    - ConfPasswordGet -- Retrieve the address of the autoboot password
+*    - ConfPasswordSet -- Change the autoboot password
 
 
 * config Defines --------------------------------
@@ -72,6 +74,10 @@
     ; language used by the boot script stored in the key/value store, if any.
     ; For now there is only one dialect, so this byte should be set to 0.
     ;
+    ; If the autoboot password is present and not the empty string, then
+    ; anyone who wants to stop the Selector from executing the "boot script"
+    ; will need to supply the password when prompted on startup.
+    ;
     ; A configuration record probably ought to be word-aligned. See comments
     ; regarding word alignment at individual procedure definitions below.
     ;
@@ -88,10 +94,13 @@ kC_Version  EQU  $1                ; b. Config record structure version
 kC_1Feature EQU  $2                ; l. Features bitmap
 
 kC_1Moniker EQU  $6                ; b[15]. Moniker string
-kC_1SafeNul EQU  $15               ; b. Moniker safety NUL location
+kC_1MSafNul EQU  $15               ; b. Moniker safety NUL location
 
 kC_1BPrgVer EQU  $16               ; b. Boot script language version
                                    ;    (not yet used; leave set to 0)
+
+kC_1Passwd  EQU  $17               ; b[8]. Autoboot password
+kC_1PSafNul EQU  $1F               ; b. Autoboot password safety NUL location
 
     ; All unallocated space is reserved for future use (heh, sure)
 
@@ -123,12 +132,13 @@ Conf1New:
 
     PEA.L   _kC_DefaultMoniker(PC)   ; Prepare to copy default...
     PEA.L   kC_1Moniker(A0)        ; ...moniker into the record...
-    MOVE.W  #(kC_1SafeNul-kC_1Moniker),-(SP)   ; ...all 15 bytes of it
+    MOVE.W  #(kC_1MSafNul-kC_1Moniker),-(SP)   ; ...all 15 bytes of it
     BSR     Copy                   ; Do the copy
     ADDQ.L  #$8,SP                 ; Pop off Copy arguments, part 1
     ADDQ.L  #$2,SP                 ; Pop off Copy arguments, part 2
 
     ; The rest of the config should remain $00
+    ; This includes kC_1Passwd and kC_1PSafNul
 
     BSR     BlockCsumSet           ; Compute checksum for the record
     ADDQ.L  #$4,SP                 ; Pop data structure address copy
@@ -206,7 +216,9 @@ ConfIsOk:
     MOVEA.L $4(SP),A0              ; Copy record address to A0
     CMP.W   #$4001,(A0)            ; Check sentinel and record bytes
     BNE.S   .rt                    ; Fail if they aren't $4001.
-    TST.B   kC_1SafeNul(A0)        ; Is moniker "safety NUL" present?
+    TST.B   kC_1MSafNul(A0)        ; Is moniker "safety NUL" present?
+    BNE.S   .rt                    ; Fail if not
+    TST.B   kC_1PSafNul(A0)        ; Is autoboot password "safety NUL" present?
     BNE.S   .rt                    ; Fail if not
     MOVE.L  A0,-(SP)               ; Copy record address on the stack
     BSR     BlockCsumCheck         ; Check the record's checksum
@@ -277,6 +289,19 @@ ConfFeatureTest:
     RTS
 
 
+    ; ConfMonikerGet -- Retrieve the address of the moniker
+    ; Args:
+    ;   SP+$4: l. Address of a config record
+    ; Notes:
+    ;   Works only for a v1 config record for now
+    ;   Places the address of the config record's moniker string into A0
+    ;   Trashes A0
+ConfMonikerGet:
+    MOVEA.L $4(SP),A0              ; Copy record address to A0
+    LEA.L   kC_1Moniker(A0),A0     ; Point A0 at the moniker contained within
+    RTS
+
+
     ; ConfMonikerSet -- Change the moniker
     ; Args:
     ;   SP+$8: l. Address of a config record
@@ -286,29 +311,70 @@ ConfFeatureTest:
     ;   Moniker may be up to 15 bytes long, not counting the NUL terminator
     ;   Trashes D0-D1/A0-A1
 ConfMonikerSet:
-    MOVEA.L $8(SP),A0              ; Copy record address to A0
-    MOVE.L  $4(SP),-(SP)           ; Duplicate moniker address on stack
-    PEA.L   kC_1Moniker(A0)        ; Copy destination onto the stack
-    MOVE.W  #(kC_1SafeNul-kC_1Moniker),-(SP)   ; Copy fifteen bytes
-    BSR     Copy                   ; Do the copy
-    ADDQ.L  #$8,SP                 ; Pop off Copy arguments, part 1
-    ADDQ.L  #$2,SP                 ; Pop off Copy arguments, part 2
     MOVE.L  $8(SP),-(SP)           ; Duplicate record address on stack
-    BSR     BlockCsumSet           ; Compute checksum for the record
-    ADDQ.L  #$4,SP                 ; Pop data structre address copy
+    MOVE.L  $8(SP),-(SP)           ; Duplicate moniker address on stack
+    MOVE.W  #kC_1Moniker,-(SP)     ; Push moniker field offset on stack
+    MOVE.W  #(kC_1MSafNul-kC_1Moniker),-(SP)   ; We'll copy fifteen bytes
+    BSR.S   _ConfStringSet         ; Perform the copy
+    ADDQ.L  #$8,SP                 ; Pop off _ConfStringSet arguments, part 1
+    ADDQ.L  #$4,SP                 ; Pop off _ConfStringSet arguments, part 2
     RTS
 
 
-    ; ConfMonikerGet -- Retrieve the address of the moniker
+    ; ConfPasswordGet -- Retrieve the address of the autoboot password
     ; Args:
     ;   SP+$4: l. Address of a config record
     ; Notes:
     ;   Works only for a v1 config record for now
-    ;   Places the address of the config record's moniker string into A0
+    ;   Places the address of the record's autoboot password string into A0
     ;   Trashes A0
-ConfMonikerGet
+ConfPasswordGet:
     MOVEA.L $4(SP),A0              ; Copy record address to A0
-    LEA.L   kC_1Moniker(A0),A0     ; Point A0 at the moniker contained within
+    LEA.L   kC_1Passwd(A0),A0      ; Point A0 at the moniker contained within
+    RTS
+
+
+    ; ConfPasswordSet -- Change the autoboot password
+    ; Args:
+    ;   SP+$8: l. Address of a config record
+    ;   SP+$4: l. Address of a new autoboot password
+    ; Notes:
+    ;   Works only for a v1 config record for now
+    ;   Moniker may be up to 8 bytes long, not counting the NUL terminator
+    ;   Trashes D0-D1/A0-A1
+ConfPasswordSet:
+    MOVE.L  $8(SP),-(SP)           ; Duplicate record address on stack
+    MOVE.L  $8(SP),-(SP)           ; Duplicate password address on stack
+    MOVE.W  #kC_1Passwd,-(SP)      ; Push password field offset on stack
+    MOVE.W  #(kC_1PSafNul-kC_1Passwd),-(SP)  ; We'll copy eight bytes
+    BSR.S   _ConfStringSet         ; Perform the copy
+    ADDQ.L  #$8,SP                 ; Pop off _ConfStringSet arguments, part 1
+    ADDQ.L  #$4,SP                 ; Pop off _ConfStringSet arguments, part 2
+    RTS
+
+
+    ; _ConfStringSet -- Copy a fixed-length string into the config
+    ; Args:
+    ;   SP+$C: l. Address of a config record
+    ;   SP+$8: l. Address of the string to copy
+    ;   SP+$6: w. Offset of the config field receiving the copy
+    ;   SP+$4: w. Length of the string to copy
+    ; Notes:
+    ;   Not strictly limited to strings: just copies (SP+$4) bytes
+    ;   Doesn't pay any attention to null terminators
+    ;   Trashes D0-D1/A0-A1
+_ConfStringSet:
+    MOVEA.L $C(SP),A0              ; Copy record address to A0
+    ADDA.W  $6(SP),A0              ; Add in the field offset
+    MOVE.L  $8(SP),-(SP)           ; Duplicate source address on the stack
+    MOVE.L  A0,-(SP)               ; Push destination address onto the stack
+    MOVE.W  $C(SP),-(SP)           ; Duplicate field size on the stack
+    BSR     Copy                   ; Do the copy
+    ADDQ.L  #$8,SP                 ; Pop off Copy arguments, part 1
+    ADDQ.L  #$2,SP                 ; Pop off Copy arguments, part 2
+    MOVE.L  $C(SP),-(SP)           ; Duplicate record address on stack
+    BSR     BlockCsumSet           ; Compute checksum for the record
+    ADDQ.L  #$4,SP                 ; Pop data structre address copy
     RTS
 
 

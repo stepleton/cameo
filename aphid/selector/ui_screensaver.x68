@@ -78,8 +78,8 @@ UiScreensaver:
 
     ; Scroll the entire display up one pixel; leave bottom row unchanged
     ; This is the top of the outermost loop
-.lo MOVE.W  SR,-(SP)             ; Save current interrupts
-    ORI.W   #$700,SR             ; Now clear the interrupts for speed
+.lo MOVE.W  SR,-(SP)             ; Save current interrupt mask
+    ORI.W   #$700,SR             ; Now disable interrupts for speed
     MOVEA.L zLisaConsoleScreenBase(PC),A0  ; Start of the display buffer into A0
     LEA.L   $5A(A0),A1           ; Point A1 90 bytes ahead
     MOVE.W  #$3FCE,D1            ; Prepare to move 16,635 words

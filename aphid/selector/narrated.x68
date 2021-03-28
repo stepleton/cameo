@@ -7,6 +7,7 @@
 * they do, plus some other utilities for displaying information to the user.
 *
 * Public procedures:
+*    - NEjectFloppies -- Narrated version of outro.x68:EjectFloppies
 *    - NSelectParallelPort -- Narrated version of drive.x68:SelectParallelPort
 *    - NCameoAphidCheck -- Narrated version of drive.x68:CameoAphidCheck
 *    - NUpdateDriveCatalogue -- drive.x68:UpdateDriveCatalogue, narrated
@@ -30,6 +31,19 @@
 
 
     SECTION kSecCode
+
+
+    ; NEjectFloppies -- Narrated version of outro.x68:EjectFloppies
+    ; Args:
+    ;   (See outro.x68:EjectFloppies)
+    ; Notes:
+    ;   (See outro.x68:EjectFloppies)
+    ;   Trashes D0-D1/A0-A1
+NEjectFloppies:
+    mUiPrint <$0A,' Floppy eject... '>
+    BSR    EjectFloppies           ; Read the configuration
+    BSR     _NVerdictByZ           ; Print whether that worked
+    RTS
 
 
     ; NSelectParallelPort -- Narrated version of drive.x68:SelectParallelPort
@@ -92,7 +106,11 @@ NUpdateDriveCatalogue:
 NHelloBootDrive:
     mUiPrint  <$0A,' Connecting to the boot drive: '>
     MOVE.B  $1B3,-(SP)             ; Push boot drive identifier to the stack
-    BSET.B  #$7,(SP)               ; Set "the" bit for PrintParallelPort
+    BNE.S   .th                    ; Was it a $00 drive identifier?
+    CMPI.B  #$03,$2AF              ; And does ROM say that we're on a Lisa 2/10?
+    BNE.S   .th                    ; No, skip ahead
+    ADDQ.B  #$02,(SP)              ; Yes, translate $00 to $02
+.th BSET.B  #$7,(SP)               ; Set "the" bit for PrintParallelPort
     BSR     PrintParallelPort      ; Print the name of the parallel port
     ADDQ.L  #$2,SP                 ; Pop the boot drive identifier from stack
     PEA.L   _sN_Ellipsis(PC)       ; Push "... " address onto the stack

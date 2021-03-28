@@ -169,6 +169,10 @@ Operations:
   - 'mk': create a new disk image. The only parameter is a null-terminated
     filename for the new image. There must be no existing file by that name.
 
+  - 'mx': create a new disk image, extended. Parameters are a null-terminated
+    numeric size string and a null-terminated filename for the new image
+    immediately following. There must be no existing file by that name.
+
   - 'rm': remove a file. The only parameter is the null-terminated name of
     the file to remove.
 
@@ -200,4 +204,44 @@ implementations.
    Bytes 46-50: ASCII null-terminated number of processes running
    Bytes 51-55: ASCII null-terminated number of total processes
 
--- _[Tom Stepleton](mailto:stepleton@gmail.com), 16 January 2021, London_
+## Block `FFFEFC`: Selector rescue
+
+This block provides read-only access to disk images of the Selector program
+that are kept separate from hard drive image data stored on a Cameo/Aphid hard
+drive emulator. It is impossible for any Apple connected to a Cameo/Aphid
+device to alter or damage these disk images. Additionally, one particular read
+to this block will
+
+Operations:
+
+- ProFile reads to $FFFEFC: have effects that depend on the 16-bit concatenation
+  of the read's retry count and sparing threshold parameters. These are:
+
+  - $FFFF: copy the contents of a ProFile drive image containing the Selector
+    program to `profile.image` in the current working directory, then trigger
+    the start of a new emulation session using `profile.image` as the current
+    hard drive image. If a file called `profile.image` already exists, it will
+    be renamed to `profile.backup-X.image`, where `X` is the first number
+    counting up from 0 that yields an unused filename. The block contents
+    retrieved by this read are unspecified.
+
+  - $0XXX: retrieve the $XXXth 532-byte block of a ProFile drive image
+    containing the Selector program, in a format suitable for use with a
+    Cameo/Aphid device; or, if the drive image is less than ($XXX - 1) * 532
+    bytes long, retrieve a block of 532 $00 bytes.
+
+  - $1XXX: retrieve the $XXXth 532-byte block of a DC42-format 400K disk image
+    containing the Selector program, suitable for installation on a 400K 3.5"
+    diskette or for use with the Floppy Emu floppy drive emulator; or, if the
+    disk image is less than ($XXX - 1) * 532 bytes long, retrieve a block of
+    532 $00 bytes.
+
+  - $2XXX: retrieve the $XXXth 532-byte block of a DC42-format Twiggy disk image
+    containing the Selector program, suitable for installation on a Twiggy
+    diskette; or, if the disk image is less than ($XXX - 1) * 532 bytes long,
+    retrieve a block of 532 $00 bytes.
+
+- ProFile writes to $FFFEFC: do nothing at all.
+
+
+-- _[Tom Stepleton](mailto:stepleton@gmail.com), 28 March 2021, London_

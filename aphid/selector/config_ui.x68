@@ -56,7 +56,7 @@ kCuiIProcT  EQU  $33               ; Total processes (null-terminated)
     ;       the user intends to disable autobooting
     ;   zConfig: Pre-loaded configuration data structure
     ; Notes:
-    ;   Trashes D0-D1/A0-A1; mutates zConfig, changes config on the Cameo/Aphid
+    ;   Trashes D0-D2/A0-A2; mutates zConfig, changes config on the Cameo/Aphid
 AskAutoboot:
     BSR     ClearLisaConsoleScreen   ; Blank the screen
     mUiPrint  r1c1,<'{ Autoboot setup }',$0A,$0A,'   '>
@@ -93,20 +93,51 @@ AskAutoboot:
     RTS
 
     ; Menu handler for setting or changing autoboot
-.ms MOVE.L  $4(SP),-(SP)           ; Copy image filename address on the stack
+    ; Ask user if they'd like an autoboot password: first print the prompt
+.ms mUiGotoRC   #$5,#$1            ; Rewind cursor to row 5, column 1
+    PEA.L   sAskReturnCancel(PC)   ; Second UI string to print
+    PEA.L   sCuiPasswd(PC)         ; First UI string to print, with textbox
+    mUiPrint  s,s                  ; Print both
+    mUiGotoR  #$5                  ; Rewind cursor to row with textbox
+
+    ; Get the password from the user
+    LEA.L   zCuiTextInput(PC),A1   ; Point A1 at the UiTextInput data structure
+    MOVE.B  #$3C,kUITI_Start(A1)   ; The textbox starts at column 60
+    MOVE.B  #$8,kUITI_Width(A1)    ; The textbox is 8 characters wide
+    MOVE.W  #$8,kUITI_Max(A1)      ; The string may be at max 8 characters
+    CLR.W   kUITI_Len(A1)          ; It's empty: we don't show the old password
+    CLR.W   kUITI_CPos(A1)         ; The cursor position is location 0
+    CLR.B   kUITI_Text(A1)         ; Put a NUL in pos. 0 of the password string
+    MOVE.L  A1,-(SP)               ; Push our textinput config on the stack
+    BSR     UiTextInput            ; Get the input from the user
+    ADDQ.L  #$4,SP                 ; Pop the textinput config off the stack
+    BNE.S   .mc                    ; If user cancels, jump to the cancel handler
+    mUiGotoR  #$7                  ; Jump to row 7 for prettier narration below
+
+    ; Set up a boot script for the image filename
+    MOVE.L  $4(SP),-(SP)           ; Copy image filename address on the stack
     BSR     NMakeBasicBootScript   ; Set up a boot script for this filename
     ADDQ.L  #$4,SP                 ; Pop the filename address off the stack
     BNE.S   .rt                    ; Jump to return if it didn't work
+
+    ; Copy the user-supplied password into the config, set the autoboot feature
+    ; bit, then write the config
     PEA.L   zConfig(PC)            ; Push config record address onto the stack
+    PEA.L   (zCuiTextInput+kUITI_Text,PC)  ; Push addr of textinput's password
+    BSR     ConfPasswordSet        ; Copy the password into the config
+    ADDQ.L  #$4,SP                 ; Pop the password argument off the stack
+
     MOVE.W  #kC_FBScript,-(SP)     ; We want to set the autoboot feature bit
     BSR     ConfFeatureSet         ; Set it!
     ADDQ.L  #$2,SP                 ; Pop the second argument off the stack
+
     BSR     NConfPut               ; Write the config to the Cameo/Aphid
     ADDQ.L  #$4,SP                 ; Pop the config record address off the stack
 .rt BSR     AskVerdictByZ          ; Say whether things worked out
     RTS
 
     ; Menu handler for cancelling changes to autoboot
+    ; Can also be jumped to if the user cancels at the autoboot password prompt
 .mc PEA.L   sAskVerdictCancelled(PC)   ; We'll say the operation was cancelled
     BSR     AskVerdict             ; Go say it and await a keypress
     ADDQ.L  #$4,SP                 ; Pop off the address of "cancelled"
@@ -138,7 +169,7 @@ AskMoniker:
     mUiGotoR  (SP)+                ; Return to row with "Moniker:"
 
     ; Prepare the text editing infrastructure for the moniker field
-    LEA.L   zConTextInput(PC),A1   ; Point A1 at the UiTextInput data structure
+    LEA.L   zCuiTextInput(PC),A1   ; Point A1 at the UiTextInput data structure
     MOVE.B  #$B,kUITI_Start(A1)    ; The textbox starts at column 11
     MOVE.B  #$F,kUITI_Width(A1)    ; The textbox is 15 characters wide
     MOVE.W  #$F,kUITI_Max(A1)      ; The string may be at max 15 characters
@@ -158,7 +189,7 @@ AskMoniker:
     TST.B   (A0)+                  ; Have we hit the terminator yet?
     BNE.S   .lp                    ; No, keep looping
 
-    LEA.L   zConTextInput(PC),A1   ; Point A1 at the UiTextInput data structure
+    LEA.L   zCuiTextInput(PC),A1   ; Point A1 at the UiTextInput data structure
     MOVE.W  D0,kUITI_Len(A1)       ; Register the length of the string
     MOVE.W  D0,kUITI_CPos(A1)      ; Set cursor position at end of string
 
@@ -220,7 +251,7 @@ KeyValueEdit:
     mUiGotoR  (SP)+                ; Return to row with "Key:"
 
     ; Prepare the text editing infrastructure for the key field
-    LEA.L   zConTextInput(PC),A0   ; Point A0 at the UiTextInput data structure
+    LEA.L   zCuiTextInput(PC),A0   ; Point A0 at the UiTextInput data structure
     MOVE.B  #$D,kUITI_Start(A0)    ; The textbox starts at column 13
     MOVE.B  #$14,kUITI_Width(A0)   ; The textbox is 20 characters wide
     MOVE.W  #$14,kUITI_Max(A0)     ; The string may be at max 20 characters
@@ -232,7 +263,7 @@ KeyValueEdit:
     ADDQ.L  #$6,SP                 ; Pop Zero arguments
 
     ; Call the high-level UiTextInput routine; abort if user cancels
-    PEA.L   zConTextInput(PC)      ; Push our textinput config onto the stack
+    PEA.L   zCuiTextInput(PC)      ; Push our textinput config onto the stack
     BSR     UiTextInput            ; Get the input from the user
     MOVEA.L (SP)+,A0               ; Move textinput config off stack and into A0
     BNE     .no                    ; Did the user cancel? Skip ahead to quit
@@ -249,7 +280,7 @@ KeyValueEdit:
 
     ; Prepare the text editing infrastructure for the cache key field
     mUiPrint  <$0A,' Cache key: [  ]'>
-    LEA.L   zConTextInput(PC),A0   ; Point A0 at the UiTextInput data structure
+    LEA.L   zCuiTextInput(PC),A0   ; Point A0 at the UiTextInput data structure
     MOVE.B  #$2,kUITI_Width(A0)    ; The textbox is 2 characters wide
     MOVE.W  #$2,kUITI_Max(A0)      ; The string may be at max 2 characters
     CLR.W   kUITI_CPos(A0)         ; The cursor starts at position 0
@@ -257,7 +288,7 @@ KeyValueEdit:
     CLR.L   kUITI_Text(A0)         ; Clear out both characters and a bit more
 
     ; Call the high-level UiTextInput routine; abort if user cancels
-    PEA.L   zConTextInput(PC)      ; Push our textinput config onto the stack
+    PEA.L   zCuiTextInput(PC)      ; Push our textinput config onto the stack
     BSR     UiTextInput            ; Get the input from the user
     MOVEA.L (SP)+,A0               ; Move textinput config off stack and into A0
     BNE     .no                    ; Did the user cancel? Skip ahead to quit
@@ -266,7 +297,7 @@ KeyValueEdit:
 
     ; Put user-specified cache key in the load request and save for later
     MOVE.W  kUITI_Text(A0),D0      ; Copy the key into D0
-    LEA.L   zConCacheKey(PC),A1    ; Here's where we want to save it
+    LEA.L   zCuiCacheKey(PC),A1    ; Here's where we want to save it
     MOVE.W  D0,(A1)                ; Go save it
     ; TODO: Don't reach in and modify the cache request ourselves!
     LEA.L   zBlock(PC),A1          ; Point A1 at zBlock
@@ -283,7 +314,7 @@ KeyValueEdit:
     BSR     AskVerdictByZ          ; Otherwise, say that things failed
     BRA     .rt                    ; Jump ahead to return
 .cr BSR     _ClearStatusLine       ; Clear status line; prepare to write there
-    MOVE.W  zConCacheKey(PC),-(SP)   ; Here's the cache key we want to read
+    MOVE.W  zCuiCacheKey(PC),-(SP)   ; Here's the cache key we want to read
     BSR     NKeyValueRead          ; Try to read it into zBlock
     ADDQ.L  #$2,SP                 ; Pop the cache key off the stack
     BEQ.S   .ed                    ; On success, jump ahead to the editor
@@ -324,13 +355,13 @@ KeyValueEdit:
     LSL.W   #$6,D0                 ; Multiply row index by row size (64)
     LEA.L   zBlockData(PC),A0      ; Point A0 at the value data
     PEA.L   $0(A0,D0.W)            ; We want to edit this row of it
-    LEA.L   zConTextInput(PC),A0   ; Point A0 at our TextInput record
+    LEA.L   zCuiTextInput(PC),A0   ; Point A0 at our TextInput record
     PEA.L   kUITI_Text(A0)         ; Push storage area for text being edited
     MOVE.W  #$40,-(SP)             ; We want to copy 64 bytes
     BSR     Copy                   ; Do the copy
     ADDQ.L  #$2,SP                 ; Pop Copy arguments, part 1
     ADDQ.L  #$8,SP                 ; Pop Copy arguments, part 2
-    LEA.L   zConTextInput(PC),A0   ; Point A0 at the value data
+    LEA.L   zCuiTextInput(PC),A0   ; Point A0 at the value data
     CLR.B   (kUITI_Text+$40)(A0)   ; Null-terminate the text buffer just in case
 
     MOVE.B  #$D,kUITI_Start(A0)    ; The textbox starts at column 13
@@ -346,7 +377,7 @@ KeyValueEdit:
     MOVE.W  (SP),D0                ; Recover row to edit into D0
     ADDQ.W  #$8,D0                 ; Turn it into a screen row
     mUiGotoR  D0                   ; Move the cursor there
-    PEA.L   zConTextInput(PC)      ; Push our textinput config on the stack
+    PEA.L   zCuiTextInput(PC)      ; Push our textinput config on the stack
     BSR     UiTextInput            ; Get the input from the user
     MOVEA.L (SP)+,A0               ; Move textinput config off stack and into A0
     BNE.S   .ez                    ; User cancel? Jump, return to main edit loop
@@ -392,7 +423,7 @@ KeyValueEdit:
 .wp BSR.S   _ClearStatusLine       ; Clear status line; prepare to write there
     PEA.L   zBlockTag(PC)          ; Push address of the key data
     PEA.L   zBlockData(PC)         ; Push address of the value data
-    MOVE.W  zConCacheKey(PC),-(SP)   ; Push the cache key we want to write
+    MOVE.W  zCuiCacheKey(PC),-(SP)   ; Push the cache key we want to write
     BSR     NKeyValuePut           ; Write to the key/value store
     ADDQ.L  #$8,SP                 ; Pop NKeyValuePut args, part 1
     ADDQ.L  #$2,SP                 ; Pop NKeyValuePut args, part 2
@@ -555,6 +586,11 @@ sCuiEditUi:
     DC.B    ' 6: 140-17F [',$0A,' 7: 180-1BF [',$0A,' 8: 1C0-1FF [',$00
 
 
+sCuiPasswd:
+    DC.B    'Password for interrupting autoboot? Leave blank for none: '
+    DC.B    '[        ]',$0A,$0A,$0A,$00
+
+
 * config_ui Scratch data ------------------------
 
 
@@ -562,14 +598,14 @@ sCuiEditUi:
 
 
     DS.W    $0                   ; Word alignment
-zConCacheKey:
+zCuiCacheKey:
     DC.W    $0000                ; Temporary storage for a key/value cache key
 
 
     ; UiTextInput for configuration changes -- includes 64-character buffer for
     ; strings; hope it won't make the program too big!
-zConTextInput:
-    DC.B    $FF                  ; Starting column is UNISET
+zCuiTextInput:
+    DC.B    $FF                  ; Starting column is UNSET
     DC.B    $FF                  ; Textbox width is UNSET
     DC.B    $0                   ; It has no scroll margins (we don't scroll)
     DC.B    $0                   ; (Reserved for internal state)

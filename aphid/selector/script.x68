@@ -73,6 +73,9 @@ kScrScan    EQU  'Scan'
     ; a Cameo/Aphid. No arguments.
 kScrHome    EQU  'Home'
 
+    ; Eject all floppy disks. No arguments.
+kScrEject   EQU  'Ejct'
+
     ; Boot from the device on the current parallel port. No arguments.
 kScrBootHd  EQU  'Boot'
 
@@ -197,6 +200,7 @@ Interpret:
 _CommandTable:
     DC.L    kScrScan
     DC.L    kScrHome
+    DC.L    kScrEject
     DC.L    kScrBootHd
     DC.L    kScrCatUp
     DC.L    kScrRead
@@ -208,6 +212,7 @@ _CommandTable:
 _CommandOffsets:
     DC.W    (_InterpScan-_CommandOffsets)
     DC.W    (_InterpHome-_CommandOffsets)
+    DC.W    (_InterpEject-_CommandOffsets)
     DC.W    (_InterpBootHd-_CommandOffsets)
     DC.W    (_InterpCatUp-_CommandOffsets)
     DC.W    (_InterpRead-_CommandOffsets)
@@ -230,6 +235,13 @@ _InterpScan:
 
 _InterpHome:
     BSR     NHelloBootDrive        ; Return to the boot Cameo/Aphid
+    MOVEA.L $4(SP),A0              ; Advance the script address four bytes...
+    ADDQ.L  #$4,A0                 ; ...to point at the next command
+    RTS
+
+
+_InterpEject:
+    BSR     NEjectFloppies         ; Eject floppy disks
     MOVEA.L $4(SP),A0              ; Advance the script address four bytes...
     ADDQ.L  #$4,A0                 ; ...to point at the next command
     RTS
@@ -422,7 +434,8 @@ MakeBasicBootScript:
     BEQ.S   .bt                    ; Yes, proceed to the next command
     MOVE.B  #'_',(A0)+             ; No, pad and advance to next word boundary
 
-.bt MOVE.L  #kScrBootHd,(A0)+      ; The next command is: boot!
+.bt MOVE.L  #kScrEject,(A0)+       ; The next command is: eject floppies!
+    MOVE.L  #kScrBootHd,(A0)+      ; Nothing left to do then but boot
     MOVE.L  #kScrHalt,(A0)         ; And then, for appearances, a halt command
 
     ; Place a checksum at the end of the script
