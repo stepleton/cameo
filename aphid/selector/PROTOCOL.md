@@ -209,8 +209,15 @@ implementations.
 This block provides read-only access to disk images of the Selector program
 that are kept separate from hard drive image data stored on a Cameo/Aphid hard
 drive emulator. It is impossible for any Apple connected to a Cameo/Aphid
-device to alter or damage these disk images. Additionally, one particular read
-to this block will
+device to alter or damage these disk images.
+
+Additionally, one particular read of this block will replace the
+`profile.image` file that Cameo/Aphid uses on power-on with an image that
+contains the Selector program. This facility makes it easier to recover from
+accidentally overwriting the Selector, which is not all that difficult to do by
+accident. For details on practical ways to invoke this recovery procedure by
+hand, refer to the [appropriate section of the Selector manual](
+MANUAL.md#oops-i-damaged-or-deleted-the-selector).
 
 Operations:
 
