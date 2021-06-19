@@ -655,7 +655,7 @@ void state_machine_write(const uint8_t command) {
   __asm(" SET r30," psBSY);
   if (SHMEM.apple_handshake[0] != 0x55) return;
                                  if (kDebug) SHMEM.control_debug_word = 0x2301;
-  if (ReceiveBytes(SHMEM.apple_sector, 532U)) return;
+  ReceiveBytes(SHMEM.apple_sector, 532U);  // <532 is fine; Apple /// uses 512.
 
   // State W4: Await \PCMD low and PR/\W high.
                                  if (kDebug) SHMEM.control_debug_word = 0x2400;

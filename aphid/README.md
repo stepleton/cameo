@@ -332,7 +332,7 @@ tested.
 
 (The `Debian 10.3 2020-04-06 4GB SD IoT` image is not recommended as it lacks
 support for the optional [power-off robustness mechanism](
-#8-optional-enable-power-off-robustness-for-the-root-filesystem) described
+#10-optional-enable-power-off-robustness-for-the-root-filesystem) described
 below. [A feature request](
 https://github.com/beagleboard/Latest-Images/issues/80) to restore this support
 in future BeagleBone.org Debian Linux disk images has been filed.)
@@ -449,7 +449,14 @@ PocketBeagle system facilities that aren't useful for hard disk emulation,
 which shaves a few seconds off the time it takes Cameo/Aphid to be ready after
 power-on.
 
-#### 9. (optional) Enable power-off robustness for the root filesystem.
+#### 9. (optional) Apply optional operating system configuration changes.
+
+With superuser privileges, and in the directory created by Step 3, run the
+`setup_os_config_changes.sh` script, which applies miscellaneous beneficial
+changes to the operating system's configuration. Refer to the contents of the
+script for details on what the changes do and why.
+
+#### 10. (optional) Enable power-off robustness for the root filesystem.
 
 Only if Step 5 has been carried out, run the script `setup_overlayroot.sh` with
 superuser privileges. This causes the PocketBeagle to boot into a mode where
@@ -624,6 +631,8 @@ of the following people and resources:
   http://beagleboard.org/chat).
 * The entire [LisaList](https://groups.google.com/forum/#!forum/lisalist)
   community.
+* Torbjörn Nordlindh et al. for information and testing leading to Apple ///
+  and recent macOS compatibility.
 * Anonymous friends.
 
 ## Revision history
@@ -664,3 +673,8 @@ images. (Tom Stepleton)
 
 15 February 2021: Eliminate timeouts in PRU0 firmware (and add timeouts to PRU1
 firmware in strategic places) for better MacWorks compatibility. (Tom Stepleton)
+
+19 June 2021: Stop requiring writes to be 532 bytes long (some Apple /// OSs
+write only 512 bytes). Manually apply changes like the ones from [this patch](
+https://github.com/RobertCNelson/boot-scripts/commit/b61125c1485bee929340cacc06c85c6fcfd678bc#)
+to the 10.0 IoT image for USB compatibility with modern MacOS. (Tom Stepleton)
