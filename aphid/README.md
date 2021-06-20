@@ -631,8 +631,8 @@ of the following people and resources:
   http://beagleboard.org/chat).
 * The entire [LisaList](https://groups.google.com/forum/#!forum/lisalist)
   community.
-* Torbjörn Nordlindh et al. for information and testing leading to Apple ///
-  and recent macOS compatibility.
+* Torbjörn Nordlindh and Stefan Wärn for information and testing leading to
+  Apple /// and recent macOS compatibility.
 * Anonymous friends.
 
 ## Revision history
