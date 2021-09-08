@@ -8,8 +8,7 @@ cape design.
 ## Rev A
 
 The Rev A design uses the same components as the cape, including two Texas
-Instruments [TXS0108EPWR]( http://www.ti.com/product/TXS0108E) or
-[TXB0108PWR]( http://www.ti.com/product/TXB0108) 8-bit bidirectional voltage
+Instruments [TXS0108EPWR]( http://www.ti.com/product/TXS0108E) 8-bit bidirectional voltage
 level translator ICs. The 100ohm resistors are included for better
 compatibility with the Lisa 2/10, but YMMV. The board is designed to plug
 directly into the parallel port without a cable.
